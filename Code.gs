@@ -134,6 +134,22 @@ function handleRestApi(action, data, authToken) {
         result = verifyBookingPublic(reqData.bookingId || reqData.id || data, reqData.sig || '');
         break;
 
+      case 'getAllUsers':
+        result = getAllUsers(token);
+        break;
+
+      case 'createUserBySuperAdmin':
+        result = createUserBySuperAdmin(reqData, token);
+        break;
+
+      case 'resetPasswordUserBySuperAdmin':
+        result = resetPasswordUserBySuperAdmin(reqData, token);
+        break;
+
+      case 'deleteUserBySuperAdmin':
+        result = deleteUserBySuperAdmin(reqData.userId || reqData.id || data, token);
+        break;
+
       case 'testKoneksiDatabase': {
         const auth = authenticateRequest(token, ['Admin', 'Super Admin']);
         if (!auth.authorized) {
@@ -358,7 +374,7 @@ function computeBookingHmac(bookingId) {
 }
 
 /**
- * Helper Keamanan: Autentikasi Token Sesi & Pengecekan Role
+ * Helper Keamanan: Autentikasi Token Sesi & Pengecekan Role (Dengan Cache Cepat)
  */
 function authenticateRequest(token, allowedRoles) {
   const cleanToken = String(token || '').trim();
@@ -366,35 +382,67 @@ function authenticateRequest(token, allowedRoles) {
     return { authorized: false, message: 'Autentikasi diperlukan. Silakan masuk terlebih dahulu.' };
   }
   try {
-    const ss = getDbSpreadsheet();
-    const sheet = ss.getSheetByName('Users');
-    if (!sheet || sheet.getLastRow() < 2) {
-      return { authorized: false, message: 'Sesi tidak valid. Silakan login ulang.' };
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'AUTH_' + cleanToken.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const cachedUser = cache.get(cacheKey);
+    let user = null;
+
+    if (cachedUser) {
+      try {
+        user = JSON.parse(cachedUser);
+      } catch (eJson) {}
     }
-    const rows = sheet.getDataRange().getValues();
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (String(row[8] || '').trim() === cleanToken) {
-        const user = {
-          id: String(row[0]),
-          username: String(row[1]),
-          nama: String(row[3]),
-          kategori: String(row[4]),
-          instansi: String(row[5]),
-          noHp: String(row[6]),
-          role: String(row[7]),
-          token: cleanToken
-        };
-        if (allowedRoles && allowedRoles.length > 0 && allowedRoles.indexOf(user.role) === -1) {
-          return { authorized: false, forbidden: true, message: 'Akses ditolak: Anda tidak memiliki izin untuk aksi ini.' };
-        }
-        return { authorized: true, user: user };
+
+    if (!user) {
+      const ss = getDbSpreadsheet();
+      const sheet = ss.getSheetByName('Users');
+      if (!sheet || sheet.getLastRow() < 2) {
+        return { authorized: false, message: 'Sesi tidak valid. Silakan login ulang.' };
       }
+      const rows = sheet.getDataRange().getValues();
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (String(row[8] || '').trim() === cleanToken) {
+          user = {
+            id: String(row[0]),
+            username: String(row[1]),
+            nama: String(row[3]),
+            kategori: String(row[4]),
+            instansi: String(row[5]),
+            noHp: String(row[6]),
+            role: String(row[7]),
+            token: cleanToken
+          };
+          // Cache sesi pengguna selama 10 menit (600 detik) untuk memangkas pembacaan berulang ke spreadsheet
+          try {
+            cache.put(cacheKey, JSON.stringify(user), 600);
+          } catch (ePut) {}
+          break;
+        }
+      }
+    }
+
+    if (user) {
+      if (allowedRoles && allowedRoles.length > 0 && allowedRoles.indexOf(user.role) === -1) {
+        return { authorized: false, forbidden: true, message: 'Akses ditolak: Anda tidak memiliki izin untuk aksi ini.' };
+      }
+      return { authorized: true, user: user };
     }
     return { authorized: false, message: 'Sesi tidak valid atau telah berakhir. Silakan login ulang.' };
   } catch (err) {
     return { authorized: false, message: 'Gagal memverifikasi sesi: ' + err.toString() };
   }
+}
+
+/**
+ * Helper: Hapus Cache Sesi Pengguna saat logout / ganti password
+ */
+function invalidateUserSessionCache(token) {
+  if (!token) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    cache.remove('AUTH_' + String(token).trim().replace(/[^a-zA-Z0-9_-]/g, '_'));
+  } catch (e) {}
 }
 
 /**
@@ -435,6 +483,27 @@ function ensureDefaultUsers(ss) {
       sheetUsers.appendRow([
         'USR-02', 'peserta', hashPassword('unsri2026'), 'Ahmad Fauzi', 'Mahasiswa/Ormawa',
         'BEM KM Universitas Sriwijaya', '081278901234', 'Penyewa', Utilities.getUuid()
+      ]);
+    }
+
+    if (!existingUsernames['adminbus']) {
+      sheetUsers.appendRow([
+        'USR-03', 'adminbus', hashPassword('busunsri2026'), 'Pengelola Bus Kampus UNSRI', 'Admin Bus',
+        'UPT Angkutan & Logistik UNSRI', '0711-580069', 'Admin Bus', Utilities.getUuid()
+      ]);
+    }
+
+    if (!existingUsernames['admininput']) {
+      sheetUsers.appendRow([
+        'USR-04', 'admininput', hashPassword('admininput2026'), 'Admin Input Data UNSRI', 'Admin Input',
+        'Biro Umum & Perlengkapan UNSRI', '0711-580069', 'Admin Input', Utilities.getUuid()
+      ]);
+    }
+
+    if (!existingUsernames['operator']) {
+      sheetUsers.appendRow([
+        'USR-05', 'operator', hashPassword('operator2026'), 'Petugas Input Data UNSRI', 'Admin Input',
+        'Biro Umum & Perlengkapan UNSRI', '0711-580069', 'Admin Input', Utilities.getUuid()
       ]);
     }
   } catch (e) {
@@ -500,7 +569,7 @@ function setupDatabase() {
       'ID_Booking', 'ID_Gedung', 'Nama_Gedung', 'Lokasi_Kampus', 'ID_User', 'Username',
       'Nama_Peminjam', 'Instansi_Ormawa', 'Kategori_Peminjam', 'No_HP', 'Nama_Acara',
       'Tanggal_Mulai', 'Tanggal_Selesai', 'Total_Biaya', 'URL_Surat_Permohonan',
-      'Status_Booking', 'URL_Surat_Balasan', 'Catatan_Admin', 'Tanggal_Pengajuan', 'H1_Notified'
+      'Status_Booking', 'URL_Surat_Balasan', 'Catatan_Admin', 'Tanggal_Pengajuan', 'H1_Notified', 'H3_Notified'
     ]);
   }
 
@@ -578,30 +647,30 @@ function uploadFileToDrive(fileObj, prefixName) {
 
 /**
  * Mengambil atau membuat folder khusus Foto Gedung di Google Drive
+ * Diletakkan di folder Foto_Gedung_UNSRI agar mudah diakses langsung di Google Drive
  */
 function getOrCreateFotoGedungFolder() {
+  const folderName = 'Foto_Gedung_UNSRI';
   try {
-    const parentFolder = getOrCreateArsipFolder();
-    const folderName = 'Foto_Gedung';
-    if (parentFolder) {
-      const subFolders = parentFolder.getFoldersByName(folderName);
-      if (subFolders.hasNext()) return subFolders.next();
-      const newSub = parentFolder.createFolder(folderName);
-      try {
-        newSub.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-      } catch (e) {}
-      return newSub;
-    }
     const rootFolders = DriveApp.getFoldersByName(folderName);
-    if (rootFolders.hasNext()) return rootFolders.next();
+    if (rootFolders.hasNext()) {
+      const f = rootFolders.next();
+      try { f.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) {}
+      return f;
+    }
     const newFolder = DriveApp.createFolder(folderName);
     try {
       newFolder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     } catch (e) {}
+    Logger.log('Folder foto gedung berhasil dibuat di Google Drive: ' + newFolder.getId());
     return newFolder;
   } catch (e) {
     Logger.log('Folder foto gedung error: ' + e);
-    return getOrCreateArsipFolder();
+    try {
+      return getOrCreateArsipFolder() || DriveApp.getRootFolder();
+    } catch (e2) {
+      return null;
+    }
   }
 }
 
@@ -610,10 +679,14 @@ function getOrCreateFotoGedungFolder() {
  * Mengembalikan URL direct image thumbnail agar langsung tampil di katalog tanpa login/CORS.
  */
 function uploadFotoGedungToDrive(fileObj, gedungId) {
-  if (!fileObj || !fileObj.data) return '';
+  if (!fileObj || !fileObj.data) {
+    throw new Error('Data berkas foto kosong.');
+  }
   try {
     const folder = getOrCreateFotoGedungFolder();
-    if (!folder) return '';
+    if (!folder) {
+      throw new Error('Folder penyimpanan foto di Google Drive tidak dapat diakses.');
+    }
 
     let cleanBase64 = String(fileObj.data);
     if (cleanBase64.indexOf(',') > -1) {
@@ -642,10 +715,12 @@ function uploadFotoGedungToDrive(fileObj, gedungId) {
       Logger.log('Set sharing foto error: ' + e);
     }
     const fileId = file.getId();
-    return 'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w1200';
+    Logger.log('Foto gedung tersimpan di Google Drive: ' + file.getName() + ' (ID: ' + fileId + ')');
+    // Mengembalikan URL Google CDN langsung bebas blokir cookies pihak ketiga
+    return 'https://lh3.googleusercontent.com/d/' + fileId + '=w1200';
   } catch (err) {
     Logger.log('Upload foto gedung error: ' + err);
-    return '';
+    throw new Error('Gagal mengunggah foto gedung ke Google Drive: ' + err.message);
   }
 }
 
@@ -662,7 +737,7 @@ function resolvePhotoUrl(url, authToken) {
     if (driveId) {
       return {
         status: 'success',
-        url: 'https://drive.google.com/thumbnail?id=' + driveId + '&sz=w1200',
+        url: 'https://lh3.googleusercontent.com/d/' + driveId + '=w1200',
         driveId: driveId
       };
     }
@@ -716,8 +791,8 @@ function getDriveFilePreview(fileUrl, authToken) {
       return { status: 'error', message: 'ID file Google Drive tidak ditemukan.' };
     }
 
-    // Pastikan file benar-benar terdaftar pada booking milik user atau user adalah Admin/Super Admin
-    const isAdmin = auth.user.role === 'Admin' || auth.user.role === 'Super Admin';
+    // Pastikan file benar-benar terdaftar pada booking milik user atau user adalah Staf/Admin/Super Admin
+    const isAdmin = auth.user.role === 'Admin' || auth.user.role === 'Super Admin' || auth.user.role === 'Admin Bus' || auth.user.role === 'Admin Input' || auth.user.role === 'Petugas Input' || auth.user.role === 'Operator';
     if (!isAdmin) {
       const ss = getDbSpreadsheet();
       const sheet = ss.getSheetByName('Booking');
@@ -951,11 +1026,31 @@ function invalidateAppCache() {
  * Helper: Filter & Redaksi Data Sensitif Berdasarkan Role / Kepemilikan User
  */
 function sanitizeInitialPayload_(rawPayload, auth) {
-  const isAdmin = auth && auth.authorized && (auth.user.role === 'Admin' || auth.user.role === 'Super Admin');
   const isSuper = auth && auth.authorized && auth.user.role === 'Super Admin';
+  const isGeneralAdmin = auth && auth.authorized && auth.user.role === 'Admin';
+  const isAdminBus = auth && auth.authorized && auth.user.role === 'Admin Bus';
+  const isAdminInput = auth && auth.authorized && (auth.user.role === 'Admin Input' || auth.user.role === 'Petugas Input' || auth.user.role === 'Operator');
+  const isAdmin = isSuper || isGeneralAdmin || isAdminBus || isAdminInput;
   const authUser = (auth && auth.authorized) ? auth.user : null;
 
-  const filteredBookings = (rawPayload.booking || []).map(b => {
+  // Jika user adalah Admin Bus, data gedung HANYA kategori 'Bus Kampus'
+  let rawGedung = rawPayload.gedung || [];
+  if (isAdminBus) {
+    rawGedung = rawGedung.filter(g => String(g.kategori || '').trim() === 'Bus Kampus');
+  }
+
+  // Identifikasi gedung bus untuk pemfilteran data peminjaman
+  const busGedungIds = (rawPayload.gedung || [])
+    .filter(g => String(g.kategori || '').trim() === 'Bus Kampus')
+    .map(g => String(g.id));
+
+  let sourceBookings = rawPayload.booking || [];
+  if (isAdminBus) {
+    // Admin Bus hanya menerima dan melihat peminjaman khusus kategori Bus Kampus
+    sourceBookings = sourceBookings.filter(b => busGedungIds.includes(String(b.gedungId)));
+  }
+
+  const filteredBookings = sourceBookings.map(b => {
     const isOwner = authUser && (b.userId === authUser.id || b.username === authUser.username);
     if (isAdmin || isOwner) {
       return b;
@@ -987,8 +1082,8 @@ function sanitizeInitialPayload_(rawPayload, auth) {
   return {
     status: 'success',
     spreadsheetName: rawPayload.spreadsheetName,
-    spreadsheetUrl: isAdmin ? rawPayload.spreadsheetUrl : '',
-    gedung: rawPayload.gedung || [],
+    spreadsheetUrl: isSuper || isGeneralAdmin ? rawPayload.spreadsheetUrl : '',
+    gedung: rawGedung,
     booking: filteredBookings,
     fonnteConfig: isSuper ? cfg : { token: '', adminWa: '', isActive: cfg.isActive }
   };
@@ -1087,6 +1182,29 @@ function getInitialData(authToken) {
           });
         }
       }
+
+      // Sort data booking berdasarkan tanggal terkini (terbaru di atas)
+      bookingData.sort((a, b) => {
+        const parseIso_ = (val) => {
+          if (!val) return '';
+          const s = String(val).trim();
+          if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+            const p = s.split('-');
+            return `${p[2]}-${p[1]}-${p[0]}`;
+          }
+          if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+            return s.substring(0, 10);
+          }
+          return s;
+        };
+        const tA = parseIso_(a.tglMulai) || parseIso_(a.tglPengajuan) || '';
+        const tB = parseIso_(b.tglMulai) || parseIso_(b.tglPengajuan) || '';
+        if (tB !== tA) return tB.localeCompare(tA);
+        const pA = parseIso_(a.tglPengajuan) || '';
+        const pB = parseIso_(b.tglPengajuan) || '';
+        if (pB !== pA) return pB.localeCompare(pA);
+        return String(b.id || '').localeCompare(String(a.id || ''));
+      });
     }
 
     const rawPayload = {
@@ -1170,6 +1288,7 @@ function logoutUser(authToken) {
   try {
     const cleanToken = String(authToken || '').trim();
     if (!cleanToken) return { status: 'success' };
+    invalidateUserSessionCache(cleanToken);
     const ss = getDbSpreadsheet();
     const sheet = ss.getSheetByName('Users');
     if (sheet && sheet.getLastRow() > 1) {
@@ -1188,11 +1307,19 @@ function logoutUser(authToken) {
 }
 
 /**
- * Konfigurasi Fonnte
+ * Konfigurasi Fonnte (Dengan Cache Cepat 30 Menit)
  */
 function getFonnteConfig() {
   const cfg = { token: '', adminWa: '', isActive: false };
   try {
+    const cache = CacheService.getScriptCache();
+    const cached = cache.get('CFG_FONNTE');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (eJson) {}
+    }
+
     const ss = getDbSpreadsheet();
     const sheet = ss.getSheetByName('Pengaturan');
     if (!sheet || sheet.getLastRow() < 2) return cfg;
@@ -1205,6 +1332,10 @@ function getFonnteConfig() {
       if (k === 'ADMIN_WA') cfg.adminWa = String(v || '').trim();
       if (k === 'WA_ACTIVE') cfg.isActive = String(v).toUpperCase() === 'TRUE';
     }
+
+    try {
+      cache.put('CFG_FONNTE', JSON.stringify(cfg), 1800);
+    } catch (ePut) {}
   } catch (e) {}
   return cfg;
 }
@@ -1219,10 +1350,14 @@ function saveFonnteConfig(newCfg) {
     let sheet = ss.getSheetByName('Pengaturan');
     if (!sheet) sheet = ss.insertSheet('Pengaturan');
     sheet.clear();
-    sheet.appendRow(['Key', 'Value']);
-    sheet.appendRow(['FONNTE_TOKEN', (newCfg.token || '').trim()]);
-    sheet.appendRow(['ADMIN_WA', (newCfg.adminWa || '').trim()]);
-    sheet.appendRow(['WA_ACTIVE', newCfg.isActive ? 'TRUE' : 'FALSE']);
+    // Optimalisasi: Batch write sekaligus 4 baris data konfigurasi
+    const configRows = [
+      ['Key', 'Value'],
+      ['FONNTE_TOKEN', (newCfg.token || '').trim()],
+      ['ADMIN_WA', (newCfg.adminWa || '').trim()],
+      ['WA_ACTIVE', newCfg.isActive ? 'TRUE' : 'FALSE']
+    ];
+    sheet.getRange(1, 1, 4, 2).setValues(configRows);
     invalidateAppCache();
     return { status: 'success' };
   } catch (e) {
@@ -1452,9 +1587,13 @@ function createBookingWithFile(payload) {
       auth.user.username, auth.user.nama, String(payload.instansi || auth.user.instansi || '').trim(),
       String(payload.kategoriPeminjam || 'Umum'), String(payload.noHp || auth.user.noHp || '').trim(),
       String(payload.namaAcara || '').trim(), tglMulaiDisp, tglSelesaiDisp, gedungInfo.totalBiaya,
-      urlSurat, 'Menunggu Verifikasi', '', '', tglPengajuan, 'NO'
+      urlSurat, 'Menunggu Verifikasi', '', '', tglPengajuan, 'NO', 'NO'
     ]);
 
+    invalidateAppCache();
+    lock.releaseLock();
+
+    // Notifikasi WA dipanggil di luar lock agar tidak memblokir proses antrean pengguna lain
     const cfg = getFonnteConfig();
     if (cfg.isActive && cfg.adminWa) {
       const pesan = `🏛️ *PENGAJUAN PINJAM GEDUNG BARU*\n\n` +
@@ -1469,21 +1608,38 @@ function createBookingWithFile(payload) {
       sendFonnteMessage(cfg.adminWa, pesan);
     }
 
-    invalidateAppCache();
     return { status: 'success', bookingId: bookingId };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch (eLock) {}
   }
 }
 
 function createManualBookingAdmin(payload) {
   const lock = LockService.getScriptLock();
   try {
-    const auth = authenticateRequest(payload && payload._token, ['Admin', 'Super Admin']);
+    const auth = authenticateRequest(payload && payload._token, ['Admin', 'Super Admin', 'Admin Bus', 'Admin Input', 'Petugas Input', 'Operator']);
     if (!auth.authorized) {
       return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+
+    // Restriksi Admin Bus: Hanya boleh memesan armada Bus Kampus
+    if (auth.user.role === 'Admin Bus') {
+      const gSheet = ss.getSheetByName('Gedung');
+      let isBus = false;
+      if (gSheet && gSheet.getLastRow() > 1) {
+        const gRows = gSheet.getDataRange().getValues();
+        for (let j = 1; j < gRows.length; j++) {
+          if (String(gRows[j][0]) === String(payload.gedungId) && String(gRows[j][3]).trim() === 'Bus Kampus') {
+            isBus = true;
+            break;
+          }
+        }
+      }
+      if (!isBus) {
+        return { status: 'error', message: 'Akses ditolak: Admin Bus hanya dapat memesan fasilitas kategori Bus Kampus.' };
+      }
     }
 
     lock.waitLock(15000);
@@ -1533,9 +1689,13 @@ function createManualBookingAdmin(payload) {
       bookingId, payload.gedungId, payload.namaGedung, payload.lokasi, auth.user.id,
       auth.user.username, payload.namaPeminjam, payload.instansi, payload.kategoriPeminjam,
       payload.noHp, payload.namaAcara, formatDateSheet(reqStart), formatDateSheet(reqEnd), Number(payload.totalBiaya) || 0,
-      urlSurat, payload.status, urlBalasan, payload.catatanAdmin, tglPengajuan, 'NO'
+      urlSurat, payload.status, urlBalasan, payload.catatanAdmin, tglPengajuan, 'NO', 'NO'
     ]);
 
+    invalidateAppCache();
+    lock.releaseLock();
+
+    // Notifikasi WhatsApp dikirimkan di luar lock
     if (payload.noHp) {
       const pesan = `🏛️ *KONFIRMASI JADWAL GEDUNG UNSRI*\n\n` +
         `Halo *${payload.namaPeminjam}* (${payload.instansi}),\n` +
@@ -1550,20 +1710,22 @@ function createManualBookingAdmin(payload) {
       sendFonnteMessage(payload.noHp, pesan);
     }
 
-    invalidateAppCache();
     return { status: 'success', bookingId: bookingId };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch (eLock) {}
   }
 }
 
 function replyBookingWithFile(payload) {
   const lock = LockService.getScriptLock();
   try {
-    const auth = authenticateRequest(payload && payload._token, ['Admin', 'Super Admin']);
+    const auth = authenticateRequest(payload && payload._token, ['Admin', 'Super Admin', 'Admin Bus']);
     if (!auth.authorized) {
+      if (auth.user && (auth.user.role === 'Admin Input' || auth.user.role === 'Petugas Input' || auth.user.role === 'Operator')) {
+        return { status: 'error', message: 'Akses ditolak: Akun Admin Input tidak memiliki wewenang untuk menyetujui atau membalas permohonan.' };
+      }
       return { status: 'error', authError: !auth.forbidden, message: auth.message };
     }
 
@@ -1571,6 +1733,31 @@ function replyBookingWithFile(payload) {
     const ss = getDbSpreadsheet();
     const sheet = ss.getSheetByName('Booking');
     const rows = sheet.getDataRange().getValues();
+
+    // Restriksi Admin Bus: Hanya boleh memutuskan peminjaman armada Bus Kampus
+    if (auth.user.role === 'Admin Bus') {
+      let bGedungId = '';
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(payload.bookingId)) {
+          bGedungId = String(rows[i][1]);
+          break;
+        }
+      }
+      const gSheet = ss.getSheetByName('Gedung');
+      let isBus = false;
+      if (gSheet && gSheet.getLastRow() > 1 && bGedungId) {
+        const gRows = gSheet.getDataRange().getValues();
+        for (let j = 1; j < gRows.length; j++) {
+          if (String(gRows[j][0]) === bGedungId && String(gRows[j][3]).trim() === 'Bus Kampus') {
+            isBus = true;
+            break;
+          }
+        }
+      }
+      if (!isBus) {
+        return { status: 'error', message: 'Akses ditolak: Admin Bus hanya dapat memproses permohonan kategori Bus Kampus.' };
+      }
+    }
 
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(payload.bookingId)) {
@@ -1607,9 +1794,16 @@ function replyBookingWithFile(payload) {
           });
         }
 
-        sheet.getRange(rowNum, 16).setValue(payload.status);
-        if (urlSuratBalasan) sheet.getRange(rowNum, 17).setValue(urlSuratBalasan);
-        sheet.getRange(rowNum, 18).setValue(payload.catatan);
+        // Optimalisasi: Batch update kolom status, surat resmi, dan catatan sekaligus
+        const finalUrlBalasan = urlSuratBalasan || rows[i][16] || '';
+        sheet.getRange(rowNum, 16, 1, 3).setValues([[
+          payload.status,
+          finalUrlBalasan,
+          payload.catatan || ''
+        ]]);
+
+        invalidateAppCache();
+        lock.releaseLock(); // Lepas lock secepatnya sebelum panggil WhatsApp API
 
         const noHpPeminjam = rows[i][9];
         const namaPeminjam = rows[i][6];
@@ -1622,64 +1816,111 @@ function replyBookingWithFile(payload) {
             `Halo *${namaPeminjam}* (${instansi}),\n` +
             `Pengajuan peminjaman gedung *${namaGedung}* telah diproses dengan status: *${payload.status.toUpperCase()}*.\n\n` +
             `• *Catatan:* ${payload.catatan || '-'}\n` +
-            (urlSuratBalasan ? `• 📄 *Surat Resmi:* ${urlSuratBalasan}\n\n` : '\n') +
+            (finalUrlBalasan ? `• 📄 *Surat Resmi:* ${finalUrlBalasan}\n\n` : '\n') +
             `*Catatan:* Untuk verifikasi fisik / administrasi lebih lanjut, silakan datang langsung ke Kantor Biro Umum & Perlengkapan UNSRI.`;
           sendFonnteMessage(noHpPeminjam, pesan);
         }
-        invalidateAppCache();
-        return { status: 'success', urlSuratBalasan: urlSuratBalasan };
+
+        return { status: 'success', urlSuratBalasan: finalUrlBalasan };
       }
     }
     return { status: 'error', message: 'Data permohonan tidak ditemukan.' };
   } catch (err) {
     return { status: 'error', message: err.toString() };
   } finally {
-    lock.releaseLock();
+    try { lock.releaseLock(); } catch (eLock) {}
   }
 }
 
-function sendHMinus1Reminders() {
+/**
+ * Pengingat Otomatis H-3 dan H-1 Pemakaian Gedung via WhatsApp
+ * Disarankan dijalankan secara terjadwal (Time-driven Trigger harian jam 08.00 pagi)
+ */
+function sendDailyReminders() {
   const ss = getDbSpreadsheet();
   const sheet = ss.getSheetByName('Booking');
   if (!sheet || sheet.getLastRow() < 2) return;
 
   const today = new Date();
-  const tomorrow = new Date();
-  tomorrow.setDate(today.getDate() + 1);
-  const tomorrowStr = Utilities.formatDate(tomorrow, 'Asia/Jakarta', 'dd-MM-yyyy');
+
+  // H-1 (Besok)
+  const dH1 = new Date();
+  dH1.setDate(today.getDate() + 1);
+  const h1Str = Utilities.formatDate(dH1, 'Asia/Jakarta', 'dd-MM-yyyy');
+
+  // H-3 (3 hari ke depan)
+  const dH3 = new Date();
+  dH3.setDate(today.getDate() + 3);
+  const h3Str = Utilities.formatDate(dH3, 'Asia/Jakarta', 'dd-MM-yyyy');
+
+  // Pastikan header kolom H3_Notified tersedia di kolom 21
+  if (sheet.getLastColumn() < 21) {
+    sheet.getRange(1, 21).setValue('H3_Notified');
+  }
 
   const rows = sheet.getDataRange().getValues();
   for (let i = 1; i < rows.length; i++) {
     const bookingId = rows[i][0];
     const namaGedung = rows[i][2];
     const namaPeminjam = rows[i][6];
+    const instansi = rows[i][7] || '';
     const noHp = rows[i][9];
     const namaAcara = rows[i][10];
     const tglMulai = formatDateSheet(rows[i][11]);
     const status = rows[i][15];
     const h1Notified = rows[i][19];
+    const h3Notified = rows[i][20];
 
-    if (status === 'Disetujui' && tglMulai === tomorrowStr && h1Notified !== 'YES') {
-      const pesan = `🔔 *PENGINGAT H-1 PEMAKAIAN GEDUNG UNSRI*\n\n` +
-        `Halo *${namaPeminjam}*,\n` +
-        `Mengingatkan bahwa jadwal kegiatan Anda:\n` +
-        `• *Acara:* ${namaAcara}\n` +
-        `• *Gedung:* ${namaGedung}\n` +
-        `• *Mulai:* Besok (${tglMulai})\n\n` +
-        `Harap berkoordinasi dengan pengelola teknis gedung terkait kunci dan kelengkapan fasilitas.`;
-      
-      if (noHp) sendFonnteMessage(noHp, pesan);
-      sheet.getRange(i + 1, 20).setValue('YES');
+    if (status === 'Disetujui' && noHp) {
+      // 1. Notifikasi H-3
+      if (tglMulai === h3Str && h3Notified !== 'YES') {
+        const pesanH3 = `🔔 *PENGINGAT H-3 PEMAKAIAN GEDUNG UNSRI*\n\n` +
+          `Halo *${namaPeminjam}* (${instansi}),\n` +
+          `Mengingatkan bahwa jadwal kegiatan Anda akan berlangsung dalam 3 hari lagi:\n\n` +
+          `• *ID Booking:* ${bookingId}\n` +
+          `• *Acara:* ${namaAcara}\n` +
+          `• *Gedung:* ${namaGedung}\n` +
+          `• *Tanggal Mulai:* ${tglMulai}\n\n` +
+          `Harap mempersiapkan surat izin masuk kampus, kelistrikan, sound system, serta konfirmasi teknis ke pengelola fasilitas.`;
+        sendFonnteMessage(noHp, pesanH3);
+        sheet.getRange(i + 1, 21).setValue('YES');
+      }
+
+      // 2. Notifikasi H-1
+      if (tglMulai === h1Str && h1Notified !== 'YES') {
+        const pesanH1 = `🔔 *PENGINGAT H-1 PEMAKAIAN GEDUNG UNSRI*\n\n` +
+          `Halo *${namaPeminjam}* (${instansi}),\n` +
+          `Mengingatkan bahwa jadwal kegiatan Anda akan dimulai BESOK:\n\n` +
+          `• *ID Booking:* ${bookingId}\n` +
+          `• *Acara:* ${namaAcara}\n` +
+          `• *Gedung:* ${namaGedung}\n` +
+          `• *Mulai:* Besok (${tglMulai})\n\n` +
+          `Harap berkoordinasi dengan petugas teknis gedung terkait serah terima kunci dan kelengkapan fasilitas.`;
+        sendFonnteMessage(noHp, pesanH1);
+        sheet.getRange(i + 1, 20).setValue('YES');
+      }
     }
   }
+}
+
+// Alias untuk kompatibilitas trigger lama
+function sendHMinus1Reminders() {
+  sendDailyReminders();
 }
 
 function saveMasterGedung(dataGedung, isEdit, authToken) {
   try {
     const token = authToken || (dataGedung && dataGedung._token);
-    const auth = authenticateRequest(token, ['Admin', 'Super Admin']);
+    const auth = authenticateRequest(token, ['Admin', 'Super Admin', 'Admin Bus', 'Admin Input', 'Petugas Input', 'Operator']);
     if (!auth.authorized) {
       return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+
+    // Restriksi Admin Bus: Hanya boleh mengelola kategori Bus Kampus
+    if (auth.user.role === 'Admin Bus') {
+      if (String(dataGedung.kategori || '').trim() !== 'Bus Kampus') {
+        return { status: 'error', message: 'Akses ditolak: Admin Bus hanya dapat mengelola armada/fasilitas kategori Bus Kampus.' };
+      }
     }
 
     const ss = getDbSpreadsheet();
@@ -1692,9 +1933,10 @@ function saveMasterGedung(dataGedung, isEdit, authToken) {
     let gambarUrl = (dataGedung.gambar || '').trim();
     if (dataGedung.fotoFile && dataGedung.fotoFile.data) {
       const driveUrl = uploadFotoGedungToDrive(dataGedung.fotoFile, dataGedung.id);
-      if (driveUrl) {
-        gambarUrl = driveUrl;
+      if (!driveUrl) {
+        throw new Error('Gagal mengunggah foto ke Google Drive. Periksa izin akses Drive Anda.');
       }
+      gambarUrl = driveUrl;
     } else if (gambarUrl) {
       // Normalisasi jika user memasukkan link Google Drive biasa agar menjadi format direct thumbnail
       const driveId = extractDriveFileId(gambarUrl);
@@ -1734,7 +1976,7 @@ function saveMasterGedung(dataGedung, isEdit, authToken) {
 
 function deleteMasterGedung(gedungId, authToken) {
   try {
-    const auth = authenticateRequest(authToken, ['Admin', 'Super Admin']);
+    const auth = authenticateRequest(authToken, ['Admin', 'Super Admin', 'Admin Bus', 'Admin Input', 'Petugas Input', 'Operator']);
     if (!auth.authorized) {
       return { status: 'error', authError: !auth.forbidden, message: auth.message };
     }
@@ -1744,14 +1986,225 @@ function deleteMasterGedung(gedungId, authToken) {
     const rows = sheet.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(gedungId)) {
+        if (auth.user.role === 'Admin Bus' && String(rows[i][3] || '').trim() !== 'Bus Kampus') {
+          return { status: 'error', message: 'Akses ditolak: Admin Bus hanya dapat menghapus armada Bus Kampus.' };
+        }
         sheet.deleteRow(i + 1);
         invalidateAppCache();
-        return { status: 'success' };
+        return { status: 'success', id: gedungId };
       }
     }
     return { status: 'error', message: 'Gedung tidak ditemukan.' };
   } catch (e) {
     return { status: 'error', message: e.toString() };
+  }
+}
+
+/**
+ * ============================================================================
+ * MODUL KHUSUS SUPER ADMIN: MANAJEMEN PENGGUNA & RESET PASSWORD MANUAL
+ * ============================================================================
+ */
+
+function getAllUsers(authToken) {
+  try {
+    const auth = authenticateRequest(authToken, ['Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { status: 'success', users: [] };
+    }
+    const rows = sheet.getDataRange().getValues();
+    const list = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r[0] || r[1]) {
+        list.push({
+          id: String(r[0] || ''),
+          username: String(r[1] || ''),
+          nama: String(r[3] || ''),
+          kategori: String(r[4] || ''),
+          instansi: String(r[5] || ''),
+          noHp: String(r[6] || ''),
+          role: String(r[7] || 'Penyewa')
+        });
+      }
+    }
+    return { status: 'success', users: list };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  }
+}
+
+function createUserBySuperAdmin(payload, authToken) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const auth = authenticateRequest(authToken, ['Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    if (!payload || !payload.username || !payload.password || !payload.nama) {
+      return { status: 'error', message: 'Username, password, dan nama lengkap wajib diisi.' };
+    }
+    const reqUsername = String(payload.username).trim().toLowerCase();
+    if (reqUsername.length < 3) {
+      return { status: 'error', message: 'Username minimal 3 karakter.' };
+    }
+    if (String(payload.password).length < 5) {
+      return { status: 'error', message: 'Password minimal 5 karakter.' };
+    }
+
+    const allowedRoles = ['Super Admin', 'Admin', 'Admin Bus', 'Admin Input', 'Petugas Input', 'Operator', 'Penyewa'];
+    let role = String(payload.role || '').trim();
+    if (!allowedRoles.includes(role)) {
+      if (/admin\s*input|petugas\s*input|operator/i.test(role)) {
+        role = 'Admin Input';
+      } else {
+        role = 'Penyewa';
+      }
+    }
+
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    const rows = sheet.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][1] || '').trim().toLowerCase() === reqUsername) {
+        return { status: 'error', message: 'Username "' + reqUsername + '" sudah digunakan. Silakan gunakan username lain.' };
+      }
+    }
+
+    const newId = 'USR-' + Utilities.formatDate(new Date(), 'Asia/Jakarta', 'yyMMddHHmmss');
+    const token = Utilities.getUuid();
+    const pwdHash = hashPassword(payload.password);
+
+    sheet.appendRow([
+      newId,
+      reqUsername,
+      pwdHash,
+      String(payload.nama).trim(),
+      String(payload.kategori || role).trim(),
+      String(payload.instansi || '').trim(),
+      String(payload.noHp || '').trim(),
+      role,
+      token
+    ]);
+
+    invalidateAppCache();
+    return {
+      status: 'success',
+      message: 'Pengguna ' + reqUsername + ' (' + role + ') berhasil dibuat.',
+      user: {
+        id: newId,
+        username: reqUsername,
+        nama: String(payload.nama).trim(),
+        kategori: String(payload.kategori || role).trim(),
+        instansi: String(payload.instansi || '').trim(),
+        noHp: String(payload.noHp || '').trim(),
+        role: role
+      }
+    };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function resetPasswordUserBySuperAdmin(payload, authToken) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const auth = authenticateRequest(authToken, ['Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    if (!payload || !payload.userId || !payload.newPassword) {
+      return { status: 'error', message: 'ID pengguna dan password baru wajib diisi.' };
+    }
+    if (String(payload.newPassword).length < 5) {
+      return { status: 'error', message: 'Password baru minimal 5 karakter.' };
+    }
+
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    const rows = sheet.getDataRange().getValues();
+    let targetRow = -1;
+    let targetUsername = '';
+
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === String(payload.userId) || String(rows[i][1]).toLowerCase() === String(payload.userId).toLowerCase()) {
+        targetRow = i + 1;
+        targetUsername = String(rows[i][1]);
+        break;
+      }
+    }
+
+    if (targetRow === -1) {
+      return { status: 'error', message: 'Pengguna tidak ditemukan.' };
+    }
+
+    const newHash = hashPassword(payload.newPassword);
+    const newToken = Utilities.getUuid();
+    sheet.getRange(targetRow, 3).setValue(newHash);
+    sheet.getRange(targetRow, 9).setValue(newToken);
+
+    invalidateAppCache();
+    return {
+      status: 'success',
+      message: 'Password untuk pengguna "' + targetUsername + '" berhasil direset secara manual.'
+    };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function deleteUserBySuperAdmin(userId, authToken) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+    const auth = authenticateRequest(authToken, ['Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    if (!userId) {
+      return { status: 'error', message: 'ID pengguna tidak valid.' };
+    }
+
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Users');
+    const rows = sheet.getDataRange().getValues();
+    let targetRow = -1;
+    let targetUsername = '';
+
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]) === String(userId)) {
+        targetRow = i + 1;
+        targetUsername = String(rows[i][1]);
+        break;
+      }
+    }
+
+    if (targetRow === -1) {
+      return { status: 'error', message: 'Pengguna tidak ditemukan.' };
+    }
+
+    if (targetUsername.toLowerCase() === 'superadmin' || targetUsername.toLowerCase() === auth.user.username.toLowerCase()) {
+      return { status: 'error', message: 'Akun Super Admin utama tidak boleh dihapus.' };
+    }
+
+    sheet.deleteRow(targetRow);
+    invalidateAppCache();
+    return { status: 'success', message: 'Pengguna "' + targetUsername + '" berhasil dihapus.' };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  } finally {
+    lock.releaseLock();
   }
 }
 
