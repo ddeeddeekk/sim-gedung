@@ -1053,7 +1053,7 @@
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
             <div class="relative flex-1 max-w-md">
               <input type="text" id="tbl-filter-search" oninput="debouncedApplyBookingFilters()"
-                placeholder="Cari nama peminjam, instansi, acara, WA, ID booking..."
+                placeholder="Cari nama peminjam, instansi, , WA, ID booking..."
                 class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm bg-slate-50 focus:bg-white focus:outline-none focus:border-[#1E40AF]">
               <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
             </div>
@@ -5059,7 +5059,7 @@
             <div class="bg-slate-50 rounded-xl p-3.5 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
               <div><span class="text-slate-500">ID Pengajuan:</span> <strong class="font-mono">${escapeHtml(booking.id)}</strong></div>
               <div><span class="text-slate-500">Status:</span> <strong>${escapeHtml(booking.status)}</strong></div>
-              <div><span class="text-slate-500">Gedung:</span> <strong>${escapeHtml(booking.namaGedung)}</strong></div>
+              <div><span class="text-slate-500">Gedung/Failistas:</span> <strong>${escapeHtml(booking.namaGedung)}</strong></div>
               <div><span class="text-slate-500">Acara:</span> <strong>${escapeHtml(booking.namaAcara)}</strong></div>
               <div><span class="text-slate-500">Peminjam:</span> <strong>${escapeHtml(booking.namaPeminjam)}</strong></div>
               <div><span class="text-slate-500">Instansi:</span> <strong>${escapeHtml(booking.instansi)}</strong></div>
