@@ -446,6 +446,8 @@
         bridge.createUserBySuperAdmin = function (payload, token) { return executeRestCall('createUserBySuperAdmin', { ...payload, _token: token || readCurrentToken() }); };
         bridge.resetPasswordUserBySuperAdmin = function (payload, token) { return executeRestCall('resetPasswordUserBySuperAdmin', { ...payload, _token: token || readCurrentToken() }); };
         bridge.deleteUserBySuperAdmin = function (userId, token) { return executeRestCall('deleteUserBySuperAdmin', { userId: userId, _token: token || readCurrentToken() }); };
+        bridge.getLoginLogs = function (token) { return executeRestCall('getLoginLogs', { _token: token || readCurrentToken() }); };
+        bridge.getWaLogs = function (token) { return executeRestCall('getWaLogs', { _token: token || readCurrentToken() }); };
 
         return bridge;
       })();
@@ -725,6 +727,10 @@
           class="admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap">
           <i data-lucide="building-2" class="w-4 h-4 text-blue-600"></i> Kelola Data Gedung
         </button>
+        <button onclick="switchAdminTab('walogs')" id="tab-admin-walogs"
+          class="hidden admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap">
+          <i data-lucide="history" class="w-4 h-4 text-teal-600"></i> History WA
+        </button>
         <button onclick="switchAdminTab('fonnte')" id="tab-admin-fonnte"
           class="hidden admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap">
           <i data-lucide="message-square" class="w-4 h-4 text-emerald-600"></i> WhatsApp Gateway
@@ -732,6 +738,10 @@
         <button onclick="switchAdminTab('users')" id="tab-admin-users"
           class="hidden admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap">
           <i data-lucide="users" class="w-4 h-4 text-purple-600"></i> Kelola Pengguna
+        </button>
+        <button onclick="switchAdminTab('loginlogs')" id="tab-admin-loginlogs"
+          class="hidden admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap">
+          <i data-lucide="shield-alert" class="w-4 h-4 text-indigo-600"></i> Log Login
         </button>
       </div>
 
@@ -1082,7 +1092,7 @@
               <thead
                 class="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
-                  <th class="px-4 py-3">ID & Pengajuan</th>
+                  <th class="px-3 py-3 w-56 max-w-[145px]">ID & Pengajuan</th>
                   <th class="px-4 py-3">Gedung & Lokasi</th>
                   <th class="px-4 py-3">Acara & Kategori</th>
                   <th class="px-4 py-3">Peminjam & Instansi</th>
@@ -1350,6 +1360,119 @@
               <tbody id="admin-user-table-body" class="divide-y divide-slate-100">
                 <tr>
                   <td colspan="5" class="p-8 text-center text-slate-400">Memuat data pengguna...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-VIEW 6: HISTORY WHATSAPP (ADMIN & SUPER ADMIN) -->
+      <div id="admin-sub-walogs" class="hidden space-y-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+              <div
+                class="w-10 h-10 rounded-xl bg-teal-50 text-teal-700 flex items-center justify-center shrink-0 border border-teal-200">
+                <i data-lucide="history" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-base text-[#081226]">Riwayat Pengiriman WhatsApp</h3>
+                <p class="text-xs text-slate-500">Log seluruh notifikasi WhatsApp otomatis & manual yang dikirim sistem (maks. 300 terbaru).</p>
+              </div>
+            </div>
+            <button type="button" onclick="loadAdminWaLogs()"
+              class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition self-start sm:self-center">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Muat Ulang
+            </button>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3 py-4">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+              <input type="text" id="search-wa-logs" oninput="debouncedRenderWaLogs()"
+                placeholder="Cari nomor WA, tipe notifikasi, isi pesan, atau pengirim..."
+                class="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-teal-600">
+            </div>
+            <select id="filter-wa-status" onchange="renderAdminWaLogs()"
+              class="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:border-teal-600">
+              <option value="Semua">Semua Status</option>
+              <option value="Terkirim">Terkirim</option>
+              <option value="Gagal">Gagal</option>
+              <option value="Dilewati">Dilewati</option>
+            </select>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-700 uppercase font-bold text-[10px] border-b border-slate-200">
+                <tr>
+                  <th class="p-3 whitespace-nowrap">Waktu</th>
+                  <th class="p-3 whitespace-nowrap">Tujuan WA</th>
+                  <th class="p-3 whitespace-nowrap">Tipe & Pengirim</th>
+                  <th class="p-3">Isi Pesan</th>
+                  <th class="p-3 whitespace-nowrap">Status & Respon</th>
+                </tr>
+              </thead>
+              <tbody id="admin-walogs-tbody" class="divide-y divide-slate-100">
+                <tr>
+                  <td colspan="5" class="p-8 text-center text-slate-400">Memuat riwayat WhatsApp...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-VIEW 7: LOG LOGIN USER (KHUSUS SUPER ADMIN) -->
+      <div id="admin-sub-loginlogs" class="hidden space-y-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 sm:p-6">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+              <div
+                class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center shrink-0 border border-indigo-200">
+                <i data-lucide="shield-alert" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-base text-[#081226]">Log Aktivitas Login Pengguna</h3>
+                <p class="text-xs text-slate-500">Audit riwayat login berhasil maupun gagal seluruh akun sistem (maks. 300 terbaru).</p>
+              </div>
+            </div>
+            <button type="button" onclick="loadAdminLoginLogs()"
+              class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition self-start sm:self-center">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Muat Ulang
+            </button>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3 py-4">
+            <div class="relative flex-1">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+              <input type="text" id="search-login-logs" oninput="debouncedRenderLoginLogs()"
+                placeholder="Cari username, nama, role, atau keterangan..."
+                class="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-600">
+            </div>
+            <select id="filter-login-status" onchange="renderAdminLoginLogs()"
+              class="px-3 py-2 rounded-xl border border-slate-200 text-sm bg-white focus:outline-none focus:border-indigo-600">
+              <option value="Semua">Semua Status</option>
+              <option value="Berhasil">Berhasil</option>
+              <option value="Gagal">Gagal</option>
+            </select>
+          </div>
+
+          <div class="overflow-x-auto rounded-xl border border-slate-200">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 text-slate-700 uppercase font-bold text-[10px] border-b border-slate-200">
+                <tr>
+                  <th class="p-3 whitespace-nowrap">Waktu</th>
+                  <th class="p-3">Pengguna & Username</th>
+                  <th class="p-3 whitespace-nowrap">Role</th>
+                  <th class="p-3 whitespace-nowrap">Status</th>
+                  <th class="p-3">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody id="admin-loginlogs-tbody" class="divide-y divide-slate-100">
+                <tr>
+                  <td colspan="5" class="p-8 text-center text-slate-400">Memuat log login...</td>
                 </tr>
               </tbody>
             </table>
@@ -1703,15 +1826,28 @@
           </div>
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Kategori *</label>
-            <select id="mg-kategori" required
+            <select id="mg-kategori" required onchange="handleKategoriSelectChange()"
               class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm bg-white">
               <option value="Auditorium">Auditorium</option>
               <option value="Graha / Aula">Graha / Aula</option>
               <option value="Ruang Sidang / Seminar">Ruang Sidang / Seminar</option>
               <option value="Lapangan">Lapangan</option>
               <option value="Bus Kampus">Bus Kampus</option>
+              <option value="__NEW__">+ Tambah Kategori Baru...</option>
             </select>
           </div>
+        </div>
+        <div id="mg-kategori-baru-wrap" class="hidden p-3 rounded-xl bg-blue-50/70 border border-blue-200 space-y-2">
+          <label class="block text-xs font-bold text-blue-900">Nama Kategori Baru *</label>
+          <div class="flex gap-2">
+            <input type="text" id="mg-kategori-baru" placeholder="Contoh: Laboratorium, Ruang Kelas, Asrama..."
+              class="flex-1 px-3 py-2 rounded-xl border border-blue-300 text-sm bg-white focus:outline-none focus:border-blue-600">
+            <button type="button" onclick="confirmKategoriBaru()"
+              class="px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold whitespace-nowrap transition">
+              Tambahkan
+            </button>
+          </div>
+          <p class="text-[11px] text-blue-700">Ketik nama kategori baru lalu klik <strong>Tambahkan</strong> (atau langsung klik Simpan).</p>
         </div>
         <div class="grid grid-cols-3 gap-3">
           <div>
@@ -2584,6 +2720,87 @@
       if (num === 0) return 'Gratis (Subsidi)';
       return 'Rp ' + num.toLocaleString('id-ID');
     }
+    const DEFAULT_KATEGORI_LIST = ['Auditorium', 'Graha / Aula', 'Ruang Sidang / Seminar', 'Lapangan', 'Bus Kampus'];
+    let customKategoriList = [];
+
+    function getAllCategories() {
+      const set = new Set(DEFAULT_KATEGORI_LIST);
+      (gedungList || []).forEach(g => {
+        const k = String(g.kategori || '').trim();
+        if (k) set.add(k);
+      });
+      (customKategoriList || []).forEach(k => {
+        const clean = String(k || '').trim();
+        if (clean) set.add(clean);
+      });
+      return Array.from(set);
+    }
+
+    function populateKategoriSelects(selectedMgVal) {
+      const categories = getAllCategories();
+      const filterKat = document.getElementById('filter-kategori');
+      if (filterKat) {
+        const curFilter = filterKat.value || 'Semua';
+        filterKat.innerHTML = '<option value="Semua">Semua Kategori</option>' +
+          categories.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+        filterKat.value = categories.includes(curFilter) ? curFilter : 'Semua';
+      }
+
+      const mgKat = document.getElementById('mg-kategori');
+      if (mgKat) {
+        const isBusAdmin = currentUser && currentUser.role === 'Admin Bus';
+        const curMg = selectedMgVal !== undefined ? selectedMgVal : mgKat.value;
+        if (isBusAdmin) {
+          mgKat.innerHTML = '<option value="Bus Kampus">Bus Kampus</option>';
+          mgKat.value = 'Bus Kampus';
+        } else {
+          mgKat.innerHTML = categories.map(k => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('') +
+            '<option value="__NEW__">+ Tambah Kategori Baru...</option>';
+          if (curMg && curMg !== '__NEW__' && categories.includes(curMg)) {
+            mgKat.value = curMg;
+          } else if (categories.length) {
+            mgKat.value = categories[0];
+          }
+        }
+      }
+    }
+
+    function handleKategoriSelectChange() {
+      const sel = document.getElementById('mg-kategori');
+      const wrap = document.getElementById('mg-kategori-baru-wrap');
+      const inp = document.getElementById('mg-kategori-baru');
+      if (!sel || !wrap || !inp) return;
+      if (sel.value === '__NEW__') {
+        wrap.classList.remove('hidden');
+        inp.required = true;
+        inp.focus();
+      } else {
+        wrap.classList.add('hidden');
+        inp.required = false;
+        inp.value = '';
+      }
+    }
+
+    function confirmKategoriBaru() {
+      const inp = document.getElementById('mg-kategori-baru');
+      const wrap = document.getElementById('mg-kategori-baru-wrap');
+      if (!inp) return;
+      const newCat = inp.value.trim();
+      if (!newCat) {
+        showToast('Masukkan nama kategori baru terlebih dahulu.', 'error');
+        inp.focus();
+        return;
+      }
+      if (!customKategoriList.includes(newCat)) {
+        customKategoriList.push(newCat);
+      }
+      populateKategoriSelects(newCat);
+      if (wrap) wrap.classList.add('hidden');
+      inp.required = false;
+      inp.value = '';
+      showToast(`Kategori "${newCat}" ditambahkan dan dipilih.`, 'success');
+    }
+
     function populateAllGedungSelects() {
       const activeGedung = gedungList.filter(g => g.status === 'Aktif');
       const activeOptions = activeGedung.map(g => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.nama)} (${escapeHtml(g.lokasi)})</option>`).join('');
@@ -2598,6 +2815,7 @@
       });
       const manSelect = document.getElementById('man-gedung-id');
       if (manSelect) manSelect.innerHTML = activeOptions;
+      populateKategoriSelects();
     }
     function handleCekKetersediaan(e, prefix) {
       if (e) e.preventDefault();
@@ -3014,27 +3232,37 @@
       }
       return '"' + str.replace(/"/g, '""') + '"';
     }
-    // EXPORT DATA KE CSV
-    function exportBookingsToCSV(filteredOnly = false) {
-      const listToExport = filteredOnly && currentFilteredBookings && currentFilteredBookings.length ? currentFilteredBookings : bookingList;
+    // EXPORT DATA KE CSV (Tunggal & Anti-CSV Injection)
+    function exportBookingsToCSV(filteredOnly = true) {
+      const listToExport = filteredOnly
+        ? (currentFilteredBookings && currentFilteredBookings.length ? currentFilteredBookings : [])
+        : bookingList;
       if (!listToExport.length) {
-        showToast('Tidak ada data untuk diekspor.', 'error');
+        showToast('Tidak ada data peminjaman untuk diekspor.', 'warning');
         return;
       }
-      const headers = ['ID Booking', 'Gedung', 'Lokasi', 'Peminjam', 'Instansi', 'Kategori', 'No WA', 'Acara', 'Tgl Mulai', 'Tgl Selesai', 'Biaya', 'Status', 'Tgl Pengajuan'];
+      const headers = ['ID Booking', 'Tanggal Pengajuan', 'Gedung / Fasilitas', 'Lokasi', 'Nama Kegiatan / Acara', 'Kategori', 'Nama Peminjam', 'Instansi / Unit', 'No WhatsApp', 'Tanggal Mulai', 'Tanggal Selesai', 'Total Biaya (Rp)', 'Status'];
       const rows = listToExport.map(b => [
-        sanitizeCsvCell(b.id), sanitizeCsvCell(b.namaGedung), sanitizeCsvCell(b.lokasi),
-        sanitizeCsvCell(b.namaPeminjam), sanitizeCsvCell(b.instansi), sanitizeCsvCell(b.kategoriPeminjam),
-        sanitizeCsvCell(b.noHp), sanitizeCsvCell(b.namaAcara), sanitizeCsvCell(toDisplayDate(b.tglMulai)),
-        sanitizeCsvCell(toDisplayDate(b.tglSelesai)), Number(b.totalBiaya) || 0,
-        sanitizeCsvCell(b.status), sanitizeCsvCell(toDisplayDate(b.tglPengajuan))
+        sanitizeCsvCell(b.id),
+        sanitizeCsvCell(toDisplayDate(b.tglPengajuan)),
+        sanitizeCsvCell(b.namaGedung),
+        sanitizeCsvCell(b.lokasi),
+        sanitizeCsvCell(b.namaAcara),
+        sanitizeCsvCell(b.kategoriPeminjam),
+        sanitizeCsvCell(b.namaPeminjam),
+        sanitizeCsvCell(b.instansi),
+        sanitizeCsvCell(b.noHp),
+        sanitizeCsvCell(toDisplayDate(b.tglMulai)),
+        sanitizeCsvCell(toDisplayDate(b.tglSelesai)),
+        Number(b.totalBiaya) || 0,
+        sanitizeCsvCell(b.status)
       ]);
-      const csvText = '\uFEFF' + [headers.map(sanitizeCsvCell).join(','), ...rows.map(r => r.join(','))].join('\n');
+      const csvText = '\uFEFF' + [headers.map(sanitizeCsvCell).join(','), ...rows.map(r => r.join(','))].join('\r\n');
       const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.setAttribute('href', url);
-      link.setAttribute('download', `Rekap_Booking_UNSRI_${filteredOnly ? 'Filter_' : ''}${new Date().toISOString().slice(0, 10)}.csv`);
+      link.setAttribute('download', `Rekap_Peminjaman_UNSRI_${filteredOnly ? 'Filter_' : ''}${getTodayStr().replace(/-/g, '')}.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -3047,18 +3275,30 @@
         return;
       }
       const isSuper = currentUser && currentUser.role === 'Super Admin';
+      const isGeneralAdmin = currentUser && currentUser.role === 'Admin';
+      const canSeeWaLogs = isSuper || isGeneralAdmin;
       const isBusAdmin = currentUser && currentUser.role === 'Admin Bus';
       const tabFonnte = document.getElementById('tab-admin-fonnte');
       const subFonnte = document.getElementById('admin-sub-fonnte');
       const tabUsers = document.getElementById('tab-admin-users');
       const subUsers = document.getElementById('admin-sub-users');
+      const tabWaLogs = document.getElementById('tab-admin-walogs');
+      const subWaLogs = document.getElementById('admin-sub-walogs');
+      const tabLoginLogs = document.getElementById('tab-admin-loginlogs');
+      const subLoginLogs = document.getElementById('admin-sub-loginlogs');
 
       if (tabFonnte) tabFonnte.classList.toggle('hidden', !isSuper);
       if (tabUsers) tabUsers.classList.toggle('hidden', !isSuper);
+      if (tabLoginLogs) tabLoginLogs.classList.toggle('hidden', !isSuper);
+      if (tabWaLogs) tabWaLogs.classList.toggle('hidden', !canSeeWaLogs);
 
       if (!isSuper) {
         if (subFonnte && !subFonnte.classList.contains('hidden')) switchAdminTab('dashboard');
         if (subUsers && !subUsers.classList.contains('hidden')) switchAdminTab('dashboard');
+        if (subLoginLogs && !subLoginLogs.classList.contains('hidden')) switchAdminTab('dashboard');
+      }
+      if (!canSeeWaLogs) {
+        if (subWaLogs && !subWaLogs.classList.contains('hidden')) switchAdminTab('dashboard');
       }
 
       const tabGdg = document.getElementById('tab-admin-gedung');
@@ -3089,10 +3329,12 @@
 
     function switchAdminTab(t) {
       const isSuper = currentUser && currentUser.role === 'Super Admin';
+      const canSeeWaLogs = currentUser && (currentUser.role === 'Super Admin' || currentUser.role === 'Admin');
       if (t === 'verifikasi') t = 'tabel';
-      if ((t === 'fonnte' || t === 'users') && !isSuper) t = 'dashboard';
+      if ((t === 'fonnte' || t === 'users' || t === 'loginlogs') && !isSuper) t = 'dashboard';
+      if (t === 'walogs' && !canSeeWaLogs) t = 'dashboard';
 
-      ['dashboard', 'tabel', 'kalender', 'gedung', 'fonnte', 'users'].forEach(tab => {
+      ['dashboard', 'tabel', 'kalender', 'gedung', 'walogs', 'fonnte', 'users', 'loginlogs'].forEach(tab => {
         const section = document.getElementById('admin-sub-' + tab);
         if (section) section.classList.toggle('hidden', tab !== t);
         const btn = document.getElementById('tab-admin-' + tab);
@@ -3102,7 +3344,10 @@
           } else {
             btn.className = 'admin-tab-btn px-4 py-2.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center gap-2 whitespace-nowrap';
           }
-          if ((tab === 'fonnte' || tab === 'users') && !isSuper) {
+          if ((tab === 'fonnte' || tab === 'users' || tab === 'loginlogs') && !isSuper) {
+            btn.classList.add('hidden');
+          }
+          if (tab === 'walogs' && !canSeeWaLogs) {
             btn.classList.add('hidden');
           }
         }
@@ -3112,7 +3357,9 @@
       if (t === 'tabel') applyBookingFilters();
       if (t === 'kalender') renderAdminCalendar();
       if (t === 'gedung') renderAdminGedungList();
+      if (t === 'walogs') loadAdminWaLogs();
       if (t === 'users') loadAdminUsers();
+      if (t === 'loginlogs') loadAdminLoginLogs();
       refreshIcons();
     }
 
@@ -3407,39 +3654,13 @@
       setBookingTimeMode('all');
     }
 
-    function exportBookingsToCSV() {
-      if (!currentFilteredBookings || !currentFilteredBookings.length) {
-        showToast('Tidak ada data peminjaman untuk diekspor.', 'warning');
-        return;
+    function formatBookingIdTwoLines(idStr) {
+      const raw = String(idStr || '').trim();
+      const match = raw.match(/^(.*?\d{8})(.*)$/);
+      if (match && match[2]) {
+        return `<span class="block">${escapeHtml(match[1])}</span><span class="block text-[10px] text-blue-700/80">${escapeHtml(match[2])}</span>`;
       }
-      const headers = ['ID Booking', 'Tanggal Pengajuan', 'Gedung / Fasilitas', 'Lokasi', 'Nama Kegiatan / Acara', 'Kategori', 'Nama Peminjam', 'Instansi / Unit', 'No WhatsApp', 'Tanggal Mulai', 'Tanggal Selesai', 'Total Biaya (Rp)', 'Status'];
-      const rows = currentFilteredBookings.map(b => [
-        `"${(b.id || '').replace(/"/g, '""')}"`,
-        `"${(toDisplayDate(b.tglPengajuan) || '').replace(/"/g, '""')}"`,
-        `"${(b.namaGedung || '').replace(/"/g, '""')}"`,
-        `"${(b.lokasi || '').replace(/"/g, '""')}"`,
-        `"${(b.namaAcara || '').replace(/"/g, '""')}"`,
-        `"${(b.kategoriPeminjam || '').replace(/"/g, '""')}"`,
-        `"${(b.namaPeminjam || '').replace(/"/g, '""')}"`,
-        `"${(b.instansi || '').replace(/"/g, '""')}"`,
-        `"${(b.noHp || '').replace(/"/g, '""')}"`,
-        `"${(toDisplayDate(b.tglMulai) || '').replace(/"/g, '""')}"`,
-        `"${(toDisplayDate(b.tglSelesai) || '').replace(/"/g, '""')}"`,
-        Number(b.totalBiaya) || 0,
-        `"${(b.status || '').replace(/"/g, '""')}"`
-      ]);
-
-      const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Rekap_Peminjaman_UNSRI_${getTodayStr().replace(/-/g, '')}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Data peminjaman berhasil diekspor ke CSV!', 'success');
+      return escapeHtml(raw);
     }
 
     function renderBookingTableRows() {
@@ -3486,8 +3707,8 @@
 
           return `
             <tr class="hover:bg-blue-50/40 transition-colors border-b border-slate-100">
-              <td class="px-4 py-3.5 align-top whitespace-nowrap">
-                <span class="font-mono text-xs font-extrabold text-[#1E40AF] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">${bIdEsc}</span>
+              <td class="px-3 py-3 align-top w-36 max-w-[145px]">
+                <span class="inline-block font-mono text-[11px] leading-tight font-extrabold text-[#1E40AF] bg-blue-50 px-1.5 py-1 rounded border border-blue-200" title="${bIdEsc}">${formatBookingIdTwoLines(b.id)}</span>
                 <p class="text-[10px] text-slate-400 mt-1">${escapeHtml(toDisplayDate(b.tglPengajuan))}</p>
               </td>
               <td class="px-4 py-3.5 align-top min-w-[180px]">
@@ -4035,6 +4256,13 @@
       const badge = document.getElementById('mg-preview-badge');
       const manualCont = document.getElementById('mg-manual-url-container');
       if (manualCont) manualCont.classList.add('hidden');
+      const katBaruWrap = document.getElementById('mg-kategori-baru-wrap');
+      const katBaruInp = document.getElementById('mg-kategori-baru');
+      if (katBaruWrap) katBaruWrap.classList.add('hidden');
+      if (katBaruInp) {
+        katBaruInp.required = false;
+        katBaruInp.value = '';
+      }
 
       if (id) {
         const g = gedungList.find(x => x.id === id);
@@ -4043,6 +4271,7 @@
         document.getElementById('edit-gedung-id').value = g.id;
         document.getElementById('mg-nama').value = g.nama;
         document.getElementById('mg-lokasi').value = g.lokasi;
+        populateKategoriSelects(g.kategori);
         document.getElementById('mg-kategori').value = g.kategori;
         document.getElementById('mg-kapasitas').value = g.kapasitas;
         document.getElementById('mg-tarif-internal').value = g.tarifInternal;
@@ -4069,6 +4298,7 @@
         title.textContent = isBusAdmin ? 'Tambah Armada Bus Kampus' : 'Tambah Gedung Baru';
         document.getElementById('edit-gedung-id').value = '';
         document.getElementById('form-master-gedung').reset();
+        populateKategoriSelects(isBusAdmin ? 'Bus Kampus' : undefined);
         if (isBusAdmin) {
           document.getElementById('mg-kategori').value = 'Bus Kampus';
         }
@@ -4249,12 +4479,26 @@
         }
       }
 
+      let kategoriVal = document.getElementById('mg-kategori').value;
+      if (kategoriVal === '__NEW__') {
+        const newKat = (document.getElementById('mg-kategori-baru')?.value || '').trim();
+        if (!newKat) {
+          showToast('Silakan masukkan nama kategori baru.', 'error');
+          document.getElementById('mg-kategori-baru')?.focus();
+          return;
+        }
+        kategoriVal = newKat;
+        if (!customKategoriList.includes(newKat)) {
+          customKategoriList.push(newKat);
+        }
+      }
+
       const nextId = isEdit ? editId : generateNextGedungId();
       const data = {
         id: nextId,
         nama: document.getElementById('mg-nama').value.trim(),
         lokasi: document.getElementById('mg-lokasi').value,
-        kategori: document.getElementById('mg-kategori').value,
+        kategori: kategoriVal,
         kapasitas: Number(document.getElementById('mg-kapasitas').value) || 0,
         tarifInternal: Number(document.getElementById('mg-tarif-internal').value) || 0,
         tarifUmum: Number(document.getElementById('mg-tarif-umum').value) || 0,
@@ -4912,6 +5156,151 @@
       }
     }
 
+    let adminWaLogsList = [];
+    let adminLoginLogsList = [];
+
+    function loadAdminWaLogs() {
+      if (!currentUser || (currentUser.role !== 'Admin' && currentUser.role !== 'Super Admin')) return;
+      const tbody = document.getElementById('admin-walogs-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Memuat riwayat WhatsApp...</td></tr>';
+      }
+      if (!isRunningInGas()) {
+        adminWaLogsList = [];
+        renderAdminWaLogs();
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res && res.status === 'success') {
+            adminWaLogsList = res.logs || [];
+            renderAdminWaLogs();
+          } else {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-rose-500">${escapeHtml((res && res.message) || 'Gagal memuat riwayat WA.')}</td></tr>`;
+          }
+        })
+        .withFailureHandler(err => {
+          if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-rose-500">Error: ${escapeHtml(err)}</td></tr>`;
+        })
+        .getWaLogs(getAuthToken());
+    }
+
+    function renderAdminWaLogs() {
+      const tbody = document.getElementById('admin-walogs-tbody');
+      if (!tbody) return;
+      const q = (document.getElementById('search-wa-logs')?.value || '').toLowerCase().trim();
+      const stFilter = document.getElementById('filter-wa-status')?.value || 'Semua';
+
+      const filtered = (adminWaLogsList || []).filter(item => {
+        if (stFilter !== 'Semua' && item.status !== stFilter) return false;
+        if (!q) return true;
+        const hay = `${item.waktu} ${item.tujuan} ${item.tipe} ${item.pesan} ${item.status} ${item.respon} ${item.pengirim}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Belum ada riwayat pengiriman WhatsApp.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(item => {
+        const badgeClass = item.status === 'Terkirim'
+          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          : (item.status === 'Dilewati'
+            ? 'bg-amber-100 text-amber-800 border-amber-200'
+            : 'bg-rose-100 text-rose-800 border-rose-200');
+        return `
+          <tr class="hover:bg-slate-50/80 transition-colors">
+            <td class="p-3 align-top whitespace-nowrap font-mono text-[11px] text-slate-600">${escapeHtml(item.waktu)}</td>
+            <td class="p-3 align-top whitespace-nowrap font-bold text-slate-800">${escapeHtml(item.tujuan || '-')}</td>
+            <td class="p-3 align-top whitespace-nowrap">
+              <span class="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-semibold text-[10px]">${escapeHtml(item.tipe || '-')}</span>
+              <p class="text-[10px] text-slate-400 mt-1">Oleh: ${escapeHtml(item.pengirim || 'Sistem')}</p>
+            </td>
+            <td class="p-3 align-top max-w-md">
+              <p class="text-xs text-slate-700 whitespace-pre-line line-clamp-3" title="${escapeHtml(item.pesan)}">${escapeHtml(item.pesan)}</p>
+            </td>
+            <td class="p-3 align-top whitespace-nowrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}">${escapeHtml(item.status)}</span>
+              ${item.respon ? `<p class="text-[10px] text-slate-500 mt-1 max-w-[180px] truncate" title="${escapeHtml(item.respon)}">${escapeHtml(item.respon)}</p>` : ''}
+            </td>
+          </tr>
+        `;
+      }).join('');
+      refreshIcons();
+    }
+    const debouncedRenderWaLogs = debounce(renderAdminWaLogs, 200);
+
+    function loadAdminLoginLogs() {
+      if (!currentUser || currentUser.role !== 'Super Admin') return;
+      const tbody = document.getElementById('admin-loginlogs-tbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Memuat log login...</td></tr>';
+      }
+      if (!isRunningInGas()) {
+        adminLoginLogsList = [];
+        renderAdminLoginLogs();
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (res && res.status === 'success') {
+            adminLoginLogsList = res.logs || [];
+            renderAdminLoginLogs();
+          } else {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-rose-500">${escapeHtml((res && res.message) || 'Gagal memuat log login.')}</td></tr>`;
+          }
+        })
+        .withFailureHandler(err => {
+          if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="p-8 text-center text-rose-500">Error: ${escapeHtml(err)}</td></tr>`;
+        })
+        .getLoginLogs(getAuthToken());
+    }
+
+    function renderAdminLoginLogs() {
+      const tbody = document.getElementById('admin-loginlogs-tbody');
+      if (!tbody) return;
+      const q = (document.getElementById('search-login-logs')?.value || '').toLowerCase().trim();
+      const stFilter = document.getElementById('filter-login-status')?.value || 'Semua';
+
+      const filtered = (adminLoginLogsList || []).filter(item => {
+        if (stFilter !== 'Semua' && item.status !== stFilter) return false;
+        if (!q) return true;
+        const hay = `${item.waktu} ${item.username} ${item.nama} ${item.role} ${item.status} ${item.keterangan}`.toLowerCase();
+        return hay.includes(q);
+      });
+
+      if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="p-8 text-center text-slate-400">Belum ada riwayat login pengguna.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(item => {
+        const isOk = item.status === 'Berhasil';
+        const badgeClass = isOk
+          ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+          : 'bg-rose-100 text-rose-800 border-rose-200';
+        return `
+          <tr class="hover:bg-slate-50/80 transition-colors">
+            <td class="p-3 align-top whitespace-nowrap font-mono text-[11px] text-slate-600">${escapeHtml(item.waktu)}</td>
+            <td class="p-3 align-top">
+              <p class="font-bold text-slate-800">${escapeHtml(item.nama || '-')}</p>
+              <p class="text-[11px] font-mono text-slate-500">@${escapeHtml(item.username || '-')}</p>
+            </td>
+            <td class="p-3 align-top whitespace-nowrap">
+              <span class="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px]">${escapeHtml(item.role || '-')}</span>
+            </td>
+            <td class="p-3 align-top whitespace-nowrap">
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass}">${escapeHtml(item.status)}</span>
+            </td>
+            <td class="p-3 align-top text-slate-600">${escapeHtml(item.keterangan || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+      refreshIcons();
+    }
+    const debouncedRenderLoginLogs = debounce(renderAdminLoginLogs, 200);
+
     function updateUserUI() {
       if (!currentUser) return;
       document.getElementById('auth-guest').classList.add('hidden');
@@ -4949,15 +5338,20 @@
         const mobLabel = document.getElementById('nav-admin-mobile-label');
         if (deskLabel) deskLabel.textContent = isSuper ? 'Menu Super Admin' : (isBusAdmin ? 'Kelola Bus Kampus' : (isPetugasInput ? 'Panel Admin (Input)' : 'Panel Admin'));
         if (mobLabel) mobLabel.textContent = isSuper ? 'Super Admin' : (isBusAdmin ? 'Bus Kampus' : (isPetugasInput ? 'Admin Input' : 'Admin'));
+        const canSeeWaLogs = isSuper || currentUser.role === 'Admin';
+        document.getElementById('tab-admin-walogs')?.classList.toggle('hidden', !canSeeWaLogs);
         document.getElementById('tab-admin-fonnte')?.classList.toggle('hidden', !isSuper);
         document.getElementById('tab-admin-users')?.classList.toggle('hidden', !isSuper);
+        document.getElementById('tab-admin-loginlogs')?.classList.toggle('hidden', !isSuper);
       } else {
         document.getElementById('nav-riwayat-desktop').classList.remove('hidden');
         document.getElementById('nav-riwayat-mobile').classList.remove('hidden');
         document.getElementById('nav-admin-desktop').classList.add('hidden');
         document.getElementById('nav-admin-mobile').classList.add('hidden');
+        document.getElementById('tab-admin-walogs')?.classList.add('hidden');
         document.getElementById('tab-admin-fonnte')?.classList.add('hidden');
         document.getElementById('tab-admin-users')?.classList.add('hidden');
+        document.getElementById('tab-admin-loginlogs')?.classList.add('hidden');
       }
       refreshIcons();
     }
@@ -4965,7 +5359,10 @@
       const oldToken = getAuthToken();
       currentUser = null;
       fonnteConfig = { token: '', adminWa: '', isActive: false };
+      adminWaLogsList = [];
+      adminLoginLogsList = [];
       localStorage.removeItem('sim_gedung_user');
+      localStorage.removeItem('sim_cached_data');
       document.getElementById('auth-guest').classList.remove('hidden');
       document.getElementById('auth-user').classList.add('hidden');
       document.getElementById('nav-admin-desktop').classList.add('hidden');
@@ -4974,10 +5371,14 @@
       document.getElementById('nav-jadwal-mobile')?.classList.add('hidden');
       document.getElementById('nav-riwayat-desktop').classList.add('hidden');
       document.getElementById('nav-riwayat-mobile').classList.add('hidden');
+      document.getElementById('tab-admin-walogs')?.classList.add('hidden');
+      document.getElementById('admin-sub-walogs')?.classList.add('hidden');
       document.getElementById('tab-admin-fonnte')?.classList.add('hidden');
       document.getElementById('admin-sub-fonnte')?.classList.add('hidden');
       document.getElementById('tab-admin-users')?.classList.add('hidden');
       document.getElementById('admin-sub-users')?.classList.add('hidden');
+      document.getElementById('tab-admin-loginlogs')?.classList.add('hidden');
+      document.getElementById('admin-sub-loginlogs')?.classList.add('hidden');
       navigateTo('katalog');
       if (oldToken && isRunningInGas()) {
         try {
