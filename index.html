@@ -481,6 +481,7 @@
         bridge.deleteUserBySuperAdmin = function (userId, token) { return executeRestCall('deleteUserBySuperAdmin', { userId: userId, _token: token || readCurrentToken() }); };
         bridge.getLoginLogs = function (token) { return executeRestCall('getLoginLogs', { _token: token || readCurrentToken() }); };
         bridge.getWaLogs = function (token) { return executeRestCall('getWaLogs', { _token: token || readCurrentToken() }); };
+        bridge.setRegistrationEnabled = function (enabled, token) { return executeRestCall('setRegistrationEnabled', { enabled: !!enabled, _token: token || readCurrentToken() }); };
 
         return bridge;
       })();
@@ -1361,6 +1362,27 @@
             </div>
           </div>
 
+          <!-- Toggle Pendaftaran Akun Mandiri (Publik) -->
+          <div class="mt-4 p-3.5 sm:p-4 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-start gap-2.5">
+              <div class="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                <i data-lucide="user-check" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-xs sm:text-sm font-bold text-[#081226]">Pendaftaran Akun Mandiri (Publik)</span>
+                  <span id="badge-reg-status" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200">Nonaktif</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">Atur apakah masyarakat/mahasiswa dapat mendaftar akun sendiri melalui tombol <strong>Daftar Baru</strong> di halaman login.</p>
+              </div>
+            </div>
+            <label class="inline-flex items-center gap-2.5 cursor-pointer select-none shrink-0 self-end sm:self-center">
+              <span class="text-xs font-semibold text-slate-600" id="label-reg-toggle">Nonaktif</span>
+              <input type="checkbox" id="toggle-registration-enabled" onchange="handleToggleRegistration(this.checked)" class="sr-only peer">
+              <div class="relative w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-emerald-600 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full shadow-inner"></div>
+            </label>
+          </div>
+
           <!-- Filter & Search Pengguna -->
           <div class="flex flex-col sm:flex-row gap-3 py-4">
             <div class="relative flex-1">
@@ -1615,6 +1637,11 @@
           <input type="text" id="book-acara" required placeholder="Contoh: Seminar Nasional"
             class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm">
         </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Nomor Surat Permohonan *</label>
+          <input type="text" id="book-no-surat-permohonan" required placeholder="Contoh: 2408/UN9.FT/SB2.AF.AF1/2026"
+            class="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm">
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Tanggal Mulai (dd-mm-yyyy) *</label>
@@ -1722,6 +1749,11 @@
           <input type="text" id="man-acara" required
             class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm">
         </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Nomor Surat Permohonan</label>
+          <input type="text" id="man-no-surat-permohonan" placeholder="Contoh: 2408/UN9.FT/SB2.AF.AF1/2026"
+            class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm">
+        </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-bold text-slate-700 mb-1">Tanggal Mulai (dd-mm-yyyy) *</label>
@@ -1780,10 +1812,10 @@
 
 
 
-  <!-- MODAL BALAS ADMIN (DENGAN FITUR AUTO-GENERATE SURAT IZIN) -->
+  <!-- MODAL BALAS ADMIN (DENGAN FITUR AUTO-GENERATE SURAT BALASAN RESMI) -->
   <div id="modal-balas-admin"
-    class="fixed inset-0 z-50 hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden fade-in">
+    class="fixed inset-0 z-50 hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden my-auto fade-in">
       <div class="bg-[#081226] text-white px-6 py-4 flex items-center justify-between">
         <div>
           <span class="text-[10px] font-bold uppercase text-[#E6B84C]">Verifikasi Permohonan</span>
@@ -1794,7 +1826,7 @@
           <i data-lucide="x" class="w-5 h-5"></i>
         </button>
       </div>
-      <form id="form-balas-admin" onsubmit="submitBalasanAdmin(event)" class="p-5 space-y-4">
+      <form id="form-balas-admin" onsubmit="submitBalasanAdmin(event)" class="p-5 space-y-3.5 max-h-[82vh] overflow-y-auto">
         <input type="hidden" id="balas-booking-id">
         <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
           <p class="font-bold text-[#081226]" id="balas-info-gedung">-</p>
@@ -1808,16 +1840,47 @@
             <option value="Ditolak">❌ Ditolak</option>
           </select>
         </div>
-        <div id="box-auto-generate" class="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+        <div id="box-auto-generate" class="p-3.5 bg-blue-50 border border-blue-200 rounded-xl space-y-2.5">
           <label class="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" id="balas-auto-gen" checked onchange="toggleFileUploader()"
               class="w-4 h-4 text-blue-600 rounded">
-            <span class="text-xs font-bold text-blue-900">✨ Buat Surat Izin Resmi Otomatis (PDF + QR)</span>
+            <span class="text-xs font-bold text-blue-900">✨ Buat Surat Balasan Resmi Otomatis (Format BPU PDF + QR)</span>
           </label>
-          <div id="box-no-surat" class="mt-2">
-            <label class="block text-[11px] font-semibold text-blue-800 mb-1">Nomor Surat (Opsional):</label>
-            <input type="text" id="balas-nomor-surat" placeholder="Contoh: UN9/BUK/HM/2026/045"
-              class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+          <div id="box-no-surat" class="space-y-2.5 pt-1">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="sm:col-span-2">
+                <label class="block text-[11px] font-semibold text-blue-800 mb-1">Nomor Surat Balasan</label>
+                <input type="text" id="balas-nomor-surat" placeholder="Contoh: 0502/UN9.BPU/SB3.BPU3/2026"
+                  class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-blue-800 mb-1">Lampiran</label>
+                <input type="text" id="balas-lampiran" value="-" placeholder="-"
+                  class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+              </div>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-blue-800 mb-1">Perihal</label>
+              <textarea id="balas-perihal" rows="2" placeholder="Izin Pemakaian ..."
+                class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white"></textarea>
+            </div>
+            <div>
+              <label class="block text-[11px] font-semibold text-blue-800 mb-1">Yth. (Tujuan Surat)</label>
+              <input type="text" id="balas-yth" placeholder="Contoh: Dekan Fakultas Teknik Universitas Sriwijaya"
+                class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-blue-800 mb-1">Nomor Surat Permohonan</label>
+                <input type="text" id="balas-no-surat-pemohon" placeholder="Contoh: 2408/UN9.FT/SB2.AF.AF1/2026"
+                  class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-blue-800 mb-1">Tanggal Surat Permohonan</label>
+                <input type="text" id="balas-tgl-surat-pemohon" placeholder="Contoh: 12 November 2026"
+                  class="w-full px-2.5 py-1.5 rounded-lg border border-blue-300 text-xs bg-white">
+              </div>
+            </div>
           </div>
         </div>
         <div id="box-manual-file" class="hidden">
@@ -1834,9 +1897,9 @@
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-700 mb-1">Catatan / Arahan *</label>
+          <label id="balas-catatan-label" class="block text-xs font-bold text-slate-700 mb-1">Catatan / Alasan Penolakan *</label>
           <textarea id="balas-catatan" rows="3" required
-            placeholder="Catatan persetujuan, instruksi pengambilan surat, atau alasan penolakan..."
+            placeholder="Catatan persetujuan, atau alasan penolakan (mis. ada jadwal kegiatan lainnya)..."
             class="w-full px-3 py-2 rounded-xl border border-slate-300 text-sm"></textarea>
         </div>
         <div class="flex gap-2 pt-2">
@@ -2035,7 +2098,7 @@
         <button type="button" onclick="switchAuthMode('login')" id="tab-auth-login"
           class="flex-1 py-3 text-xs font-bold border-b-2 border-[#1E40AF] text-[#1E40AF]">MASUK AKUN</button>
         <button type="button" onclick="switchAuthMode('register')" id="tab-auth-register"
-          class="flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-slate-400">DAFTAR BARU</button>
+          class="hidden flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-slate-400">DAFTAR BARU</button>
       </div>
       <!-- Form Login -->
       <form id="form-login" onsubmit="handleLogin(event)" class="p-6 space-y-4">
@@ -2353,6 +2416,7 @@
     let isPhoneOtpVerified = false;
     let generatedDemoOtp = '';
     let fonnteConfig = { token: '', adminWa: '', isActive: false };
+    let registrationEnabled = false;
     let previewFileMeta = {};
     let activeDocBlobUrl = null;
     const DUMMY_GEDUNG = [
@@ -2475,6 +2539,10 @@
       return (currentUser && currentUser.token) ? String(currentUser.token) : '';
     }
     function getAppBaseUrl() {
+      const host = window.location.hostname || '';
+      if (!/^https?:$/i.test(window.location.protocol) || /googleusercontent\.com|localhost|127\.0\.0\.1/i.test(host)) {
+        return '';
+      }
       return window.location.origin + window.location.pathname;
     }
     function handleSessionExpired(msg) {
@@ -2670,6 +2738,15 @@
         const vSig = urlParams.get('sig') || '';
         if (vId) {
           openVerifyModalFromParam(vId, vSig);
+        } else if (typeof google !== 'undefined' && google.script && google.script.url && typeof google.script.url.getLocation === 'function') {
+          google.script.url.getLocation((loc) => {
+            const p = (loc && loc.parameter) ? loc.parameter : {};
+            const gasId = p.verify || p.id || '';
+            const gasSig = p.sig || '';
+            if (gasId) {
+              openVerifyModalFromParam(gasId, gasSig);
+            }
+          });
         }
       } catch (eParam) { }
     });
@@ -2707,6 +2784,8 @@
               }));
             } catch (eSave) { }
             if (res.fonnteConfig) fonnteConfig = res.fonnteConfig;
+            registrationEnabled = res.registrationEnabled === true;
+            applyRegistrationToggleUI();
             populateAllGedungSelects();
             renderGedungList();
             renderJadwalList();
@@ -3068,6 +3147,8 @@
       document.getElementById('book-hp').value = currentUser.noHp || '';
       document.getElementById('book-instansi').value = currentUser.instansi || '';
       document.getElementById('book-acara').value = '';
+      const bookNoSuratEl = document.getElementById('book-no-surat-permohonan');
+      if (bookNoSuratEl) bookNoSuratEl.value = '';
       const todayDisplay = toDisplayDate(new Date());
       const mVal = preMulai ? toDisplayDate(preMulai) : todayDisplay;
       const sVal = preSelesai ? toDisplayDate(preSelesai) : mVal;
@@ -3188,6 +3269,7 @@
         kategoriPeminjam: document.getElementById('book-kategori').value,
         noHp: document.getElementById('book-hp').value.trim(),
         namaAcara: document.getElementById('book-acara').value.trim(),
+        noSuratPermohonan: (document.getElementById('book-no-surat-permohonan')?.value || '').trim(),
         tglMulai: toDisplayDate(m),
         tglSelesai: toDisplayDate(s),
         totalBiaya: hitungEstimasiBiaya()
@@ -3377,6 +3459,7 @@
       document.getElementById('cfg-fonnte-token').value = fonnteConfig.token || '';
       document.getElementById('cfg-admin-wa').value = fonnteConfig.adminWa || '';
       document.getElementById('cfg-wa-active').checked = !!fonnteConfig.isActive;
+      applyRegistrationToggleUI();
 
       renderAdminDashboard();
       applyBookingFilters();
@@ -4083,20 +4166,29 @@
     function toggleAutoGenerateOpt() {
       const status = document.getElementById('balas-status').value;
       const box = document.getElementById('box-auto-generate');
-      if (status === 'Disetujui') {
-        box.classList.remove('hidden');
-      } else {
-        box.classList.add('hidden');
-        document.getElementById('box-manual-file').classList.remove('hidden');
+      const catatanLabel = document.getElementById('balas-catatan-label');
+      const catatanEl = document.getElementById('balas-catatan');
+      if (box) box.classList.remove('hidden');
+      if (catatanLabel) {
+        catatanLabel.textContent = status === 'Ditolak'
+          ? 'Alasan Penolakan (muncul di isi surat: "...dikarenakan [alasan]") *'
+          : 'Catatan / Arahan *';
+      }
+      const DEFAULT_CATATAN_SETUJU = 'Surat fisik bisa diambil di BPU Universitas Sriwijaya pada jam kerja';
+      if (catatanEl) {
+        if (status === 'Ditolak' && (!catatanEl.value.trim() || catatanEl.value.trim() === DEFAULT_CATATAN_SETUJU || catatanEl.value.trim().startsWith('Disetujui.'))) {
+          catatanEl.value = 'ada jadwal kegiatan lainnya';
+        } else if (status === 'Disetujui' && (!catatanEl.value.trim() || catatanEl.value.trim() === 'ada jadwal kegiatan lainnya')) {
+          catatanEl.value = DEFAULT_CATATAN_SETUJU;
+        }
       }
       toggleFileUploader();
     }
     function toggleFileUploader() {
       const autoGen = document.getElementById('balas-auto-gen').checked;
-      const status = document.getElementById('balas-status').value;
       const fileBox = document.getElementById('box-manual-file');
       const noSuratBox = document.getElementById('box-no-surat');
-      if (status === 'Disetujui' && autoGen) {
+      if (autoGen) {
         fileBox.classList.add('hidden');
         noSuratBox.classList.remove('hidden');
         document.getElementById('balas-file-surat').required = false;
@@ -4114,10 +4206,18 @@
       if (!currentUser || (currentUser.role !== 'Admin' && currentUser.role !== 'Super Admin' && currentUser.role !== 'Admin Bus')) return;
       const b = bookingList.find(x => x.id === bId);
       if (!b) return;
+      const DEFAULT_CATATAN_SETUJU = 'Surat fisik bisa diambil di BPU Universitas Sriwijaya pada jam kerja';
       document.getElementById('balas-booking-id').value = b.id;
       document.getElementById('balas-info-gedung').textContent = `${b.namaGedung} (${toDisplayDate(b.tglMulai)} s/d ${toDisplayDate(b.tglSelesai)})`;
       document.getElementById('balas-info-peminjam').textContent = `Pemohon: ${b.namaPeminjam} - ${b.instansi}`;
-      document.getElementById('balas-catatan').value = b.catatanAdmin || 'Disetujui. Harap membawa surat ini saat konfirmasi ke Biro Umum.';
+      document.getElementById('balas-status').value = b.status === 'Ditolak' ? 'Ditolak' : 'Disetujui';
+      document.getElementById('balas-nomor-surat').value = `/UN9.BPU/SB3.BPU3/${new Date().getFullYear()}`;
+      document.getElementById('balas-lampiran').value = '-';
+      document.getElementById('balas-perihal').value = `Izin Pemakaian ${b.namaGedung}\nUniversitas Sriwijaya`;
+      document.getElementById('balas-yth').value = b.instansi ? `Pimpinan / ${b.instansi}` : (b.namaPeminjam || '');
+      document.getElementById('balas-no-surat-pemohon').value = b.noSuratPermohonan || '';
+      document.getElementById('balas-tgl-surat-pemohon').value = toDisplayDate(b.tglPengajuan) || '';
+      document.getElementById('balas-catatan').value = b.catatanAdmin || (b.status === 'Ditolak' ? 'ada jadwal kegiatan lainnya' : DEFAULT_CATATAN_SETUJU);
       document.getElementById('balas-file-surat').value = '';
       document.getElementById('balas-file-label').textContent = 'Pilih berkas balasan';
       document.getElementById('balas-auto-gen').checked = true;
@@ -4133,10 +4233,15 @@
       const status = document.getElementById('balas-status').value;
       const catatan = document.getElementById('balas-catatan').value.trim();
       const autoGen = document.getElementById('balas-auto-gen').checked;
-      const nomorSurat = document.getElementById('balas-nomor-surat').value.trim();
+      const nomorSurat = (document.getElementById('balas-nomor-surat')?.value || '').trim();
+      const lampiran = (document.getElementById('balas-lampiran')?.value || '-').trim();
+      const perihal = (document.getElementById('balas-perihal')?.value || '').trim();
+      const ythTujuan = (document.getElementById('balas-yth')?.value || '').trim();
+      const noSuratPemohon = (document.getElementById('balas-no-surat-pemohon')?.value || '').trim();
+      const tglSuratPemohon = (document.getElementById('balas-tgl-surat-pemohon')?.value || '').trim();
       const fi = document.getElementById('balas-file-surat');
       let fileSurat = null;
-      if (!autoGen || status === 'Ditolak') {
+      if (!autoGen) {
         if (!fi.files || !fi.files[0]) {
           showToast('Wajib mengunggah file surat balasan fisik/manual.', 'error');
           return;
@@ -4148,8 +4253,8 @@
         if (item) {
           item.status = status;
           item.catatanAdmin = catatan;
-          if (autoGen && status !== 'Ditolak') {
-            item.urlSuratBalasan = 'https://unsri.ac.id/surat-izin-otomatis-demo.pdf';
+          if (autoGen) {
+            item.urlSuratBalasan = 'https://unsri.ac.id/surat-balasan-otomatis-demo.pdf';
           } else if (fi.files && fi.files[0]) {
             const localFile = fi.files[0];
             const previewUrl = URL.createObjectURL(localFile);
@@ -4186,7 +4291,17 @@
           .replyBookingWithFile({
             _token: getAuthToken(),
             appBaseUrl: getAppBaseUrl(),
-            bookingId: bId, status, catatan, autoGenerate: autoGen, nomorSurat, fileSurat
+            bookingId: bId,
+            status,
+            catatan,
+            autoGenerate: autoGen,
+            nomorSurat,
+            lampiran,
+            perihal,
+            ythTujuan,
+            noSuratPemohon,
+            tglSuratPemohon,
+            fileSurat
           });
       }
     }
@@ -4201,6 +4316,8 @@
       document.getElementById('man-hp').value = '';
       document.getElementById('man-instansi').value = '';
       document.getElementById('man-acara').value = '';
+      const manNoSuratEl = document.getElementById('man-no-surat-permohonan');
+      if (manNoSuratEl) manNoSuratEl.value = '';
       document.getElementById('man-catatan').value = '';
       const manStatusEl = document.getElementById('man-status');
       if (manStatusEl) manStatusEl.value = 'Menunggu Verifikasi';
@@ -4250,6 +4367,7 @@
         kategoriPeminjam: document.getElementById('man-kategori').value,
         instansi: document.getElementById('man-instansi').value.trim(),
         namaAcara: document.getElementById('man-acara').value.trim(),
+        noSuratPermohonan: (document.getElementById('man-no-surat-permohonan')?.value || '').trim(),
         tglMulai: toDisplayDate(m),
         tglSelesai: toDisplayDate(s),
         totalBiaya: Number(document.getElementById('man-biaya').value) || 0,
@@ -4774,16 +4892,76 @@
           .testSendFonnteWA(token, target, getAuthToken());
       }
     }
+    function applyRegistrationToggleUI() {
+      const enabled = !!registrationEnabled;
+      const tReg = document.getElementById('tab-auth-register');
+      if (tReg) tReg.classList.toggle('hidden', !enabled);
+      const chk = document.getElementById('toggle-registration-enabled');
+      if (chk) chk.checked = enabled;
+      const badge = document.getElementById('badge-reg-status');
+      if (badge) {
+        badge.textContent = enabled ? 'Aktif' : 'Nonaktif';
+        badge.className = enabled
+          ? 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200'
+          : 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 border border-rose-200';
+      }
+      const lbl = document.getElementById('label-reg-toggle');
+      if (lbl) lbl.textContent = enabled ? 'Aktif' : 'Nonaktif';
+      if (!enabled) {
+        const fReg = document.getElementById('form-register');
+        if (fReg && !fReg.classList.contains('hidden')) {
+          switchAuthMode('login');
+        }
+      }
+    }
+    function handleToggleRegistration(enabled) {
+      if (!currentUser || currentUser.role !== 'Super Admin') {
+        applyRegistrationToggleUI();
+        return;
+      }
+      const chk = document.getElementById('toggle-registration-enabled');
+      if (chk) chk.disabled = true;
+      if (IS_PREVIEW) {
+        registrationEnabled = !!enabled;
+        if (chk) chk.disabled = false;
+        applyRegistrationToggleUI();
+        showToast(registrationEnabled ? 'Pendaftaran akun diaktifkan (Preview).' : 'Pendaftaran akun dinonaktifkan (Preview).', 'success');
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(res => {
+          if (chk) chk.disabled = false;
+          if (res && res.status === 'success') {
+            registrationEnabled = !!res.registrationEnabled;
+            applyRegistrationToggleUI();
+            showToast(res.message || 'Status pendaftaran diperbarui.', 'success');
+          } else {
+            applyRegistrationToggleUI();
+            showToast((res && res.message) || 'Gagal mengubah status pendaftaran.', 'error');
+          }
+        })
+        .withFailureHandler(err => {
+          if (chk) chk.disabled = false;
+          applyRegistrationToggleUI();
+          showToast('Error: ' + err, 'error');
+        })
+        .setRegistrationEnabled(!!enabled, getAuthToken());
+    }
     function openLoginModal() {
       const modal = document.getElementById('modal-login');
       if (!modal) return;
       modal.classList.remove('hidden');
       modal.style.display = 'flex';
+      applyRegistrationToggleUI();
       resetOtpState();
       switchAuthMode('login');
       refreshIcons();
     }
     function switchAuthMode(mode) {
+      if (mode === 'register' && !registrationEnabled) {
+        showToast('Pendaftaran akun mandiri saat ini sedang dinonaktifkan oleh Administrator.', 'warning');
+        mode = 'login';
+      }
       const fLogin = document.getElementById('form-login');
       const fReg = document.getElementById('form-register');
       const tLogin = document.getElementById('tab-auth-login');
@@ -4792,7 +4970,7 @@
         fLogin.classList.remove('hidden');
         fReg.classList.add('hidden');
         tLogin.className = 'flex-1 py-3 text-xs font-bold border-b-2 border-[#081226] text-[#081226]';
-        tReg.className = 'flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-slate-400';
+        tReg.className = (registrationEnabled ? '' : 'hidden ') + 'flex-1 py-3 text-xs font-bold border-b-2 border-transparent text-slate-400';
       } else {
         fLogin.classList.add('hidden');
         fReg.classList.remove('hidden');
