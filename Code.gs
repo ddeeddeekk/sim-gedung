@@ -150,6 +150,14 @@ function handleRestApi(action, data, authToken) {
         result = deleteUserBySuperAdmin(reqData.userId || reqData.id || data, token);
         break;
 
+      case 'getLoginLogs':
+        result = getLoginLogs(token);
+        break;
+
+      case 'getWaLogs':
+        result = getWaLogs(token);
+        break;
+
       case 'testKoneksiDatabase': {
         const auth = authenticateRequest(token, ['Admin', 'Super Admin']);
         if (!auth.authorized) {
@@ -583,6 +591,24 @@ function setupDatabase() {
     sheetConfig.appendRow(['FONNTE_TOKEN', '']);
     sheetConfig.appendRow(['ADMIN_WA', '']);
     sheetConfig.appendRow(['WA_ACTIVE', 'FALSE']);
+  }
+
+  // 5. Sheet Log_Login
+  let sheetLogLogin = ss.getSheetByName('Log_Login');
+  if (!sheetLogLogin) {
+    sheetLogLogin = ss.insertSheet('Log_Login');
+  }
+  if (sheetLogLogin.getLastRow() < 1) {
+    sheetLogLogin.appendRow(['ID_Log', 'Waktu', 'ID_User', 'Username', 'Nama_Lengkap', 'Role', 'Status', 'Keterangan']);
+  }
+
+  // 6. Sheet Log_WA
+  let sheetLogWa = ss.getSheetByName('Log_WA');
+  if (!sheetLogWa) {
+    sheetLogWa = ss.insertSheet('Log_WA');
+  }
+  if (sheetLogWa.getLastRow() < 1) {
+    sheetLogWa.appendRow(['ID_Log', 'Waktu', 'Tujuan_No_WA', 'Tipe_Notifikasi', 'Pesan', 'Status_Kirim', 'Respon_API', 'Pengirim_User']);
   }
 
   // Hapus Sheet1 kosong bawaan jika ada
@@ -1230,6 +1256,71 @@ function getInitialData(authToken) {
 }
 
 /**
+ * Helper Logging: Catat riwayat login pengguna ke sheet Log_Login
+ */
+function recordLoginLog_(userInfo, status, keterangan) {
+  try {
+    const ss = getDbSpreadsheet();
+    if (!ss) return;
+    let sheet = ss.getSheetByName('Log_Login');
+    if (!sheet) {
+      sheet = ss.insertSheet('Log_Login');
+      sheet.appendRow(['ID_Log', 'Waktu', 'ID_User', 'Username', 'Nama_Lengkap', 'Role', 'Status', 'Keterangan']);
+    } else if (sheet.getLastRow() < 1) {
+      sheet.appendRow(['ID_Log', 'Waktu', 'ID_User', 'Username', 'Nama_Lengkap', 'Role', 'Status', 'Keterangan']);
+    }
+    const now = new Date();
+    const logId = 'LOG-IN-' + Utilities.formatDate(now, 'Asia/Jakarta', 'yyMMddHHmmss') + '-' + Math.floor(100 + Math.random() * 900);
+    const waktu = Utilities.formatDate(now, 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss');
+    sheet.appendRow([
+      logId,
+      waktu,
+      String((userInfo && userInfo.id) || ''),
+      String((userInfo && userInfo.username) || ''),
+      String((userInfo && userInfo.nama) || ''),
+      String((userInfo && userInfo.role) || ''),
+      String(status || 'Berhasil'),
+      String(keterangan || '')
+    ]);
+  } catch (e) {
+    Logger.log('recordLoginLog_ error: ' + e);
+  }
+}
+
+/**
+ * Helper Logging: Catat riwayat pengiriman WhatsApp ke sheet Log_WA
+ */
+function recordWaLog_(targetPhone, tipe, messageText, statusKirim, responApi, pengirimUser) {
+  try {
+    const ss = getDbSpreadsheet();
+    if (!ss) return;
+    let sheet = ss.getSheetByName('Log_WA');
+    if (!sheet) {
+      sheet = ss.insertSheet('Log_WA');
+      sheet.appendRow(['ID_Log', 'Waktu', 'Tujuan_No_WA', 'Tipe_Notifikasi', 'Pesan', 'Status_Kirim', 'Respon_API', 'Pengirim_User']);
+    } else if (sheet.getLastRow() < 1) {
+      sheet.appendRow(['ID_Log', 'Waktu', 'Tujuan_No_WA', 'Tipe_Notifikasi', 'Pesan', 'Status_Kirim', 'Respon_API', 'Pengirim_User']);
+    }
+    const now = new Date();
+    const logId = 'LOG-WA-' + Utilities.formatDate(now, 'Asia/Jakarta', 'yyMMddHHmmss') + '-' + Math.floor(100 + Math.random() * 900);
+    const waktu = Utilities.formatDate(now, 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss');
+    const pesanRingkas = String(messageText || '').substring(0, 1500);
+    sheet.appendRow([
+      logId,
+      waktu,
+      String(targetPhone || ''),
+      String(tipe || 'Notifikasi Umum'),
+      pesanRingkas,
+      String(statusKirim || 'Gagal'),
+      String(responApi || '').substring(0, 500),
+      String(pengirimUser || 'Sistem')
+    ]);
+  } catch (e) {
+    Logger.log('recordWaLog_ error: ' + e);
+  }
+}
+
+/**
  * Autentikasi Login (Mendukung Salted SHA-256 & Migrasi Otomatis Hash Legacy)
  */
 function loginUser(username, password) {
@@ -1246,35 +1337,56 @@ function loginUser(username, password) {
 
     const allUsers = sheet.getDataRange().getValues();
     const targetUser = String(username).trim().toLowerCase();
+    let matchedUserMeta = null;
 
     for (let i = 1; i < allUsers.length; i++) {
       const row = allUsers[i];
       const uName = String(row[1]).trim().toLowerCase();
       const storedHash = String(row[2]).trim();
 
+      if (uName === targetUser) {
+        matchedUserMeta = {
+          id: String(row[0]),
+          username: String(row[1]),
+          nama: String(row[3]),
+          role: String(row[7])
+        };
+      }
+
       if (uName === targetUser && verifyPassword_(password, storedHash)) {
         // Migrasi otomatis hash legacy (tanpa salt) ke salted hash
         if (storedHash.indexOf('sha256$') !== 0) {
           sheet.getRange(i + 1, 3).setValue(hashPassword(password));
         }
+        const oldToken = String(row[8] || '').trim();
+        if (oldToken) invalidateUserSessionCache(oldToken);
+
         const token = Utilities.getUuid();
         sheet.getRange(i + 1, 9).setValue(token);
+
+        const userObj = {
+          id: String(row[0]),
+          username: String(row[1]),
+          nama: String(row[3]),
+          kategori: String(row[4]),
+          instansi: String(row[5]),
+          noHp: String(row[6]),
+          role: String(row[7]),
+          token: token
+        };
+        recordLoginLog_(userObj, 'Berhasil', 'Login berhasil');
         return {
           status: 'success',
-          user: {
-            id: String(row[0]),
-            username: String(row[1]),
-            nama: String(row[3]),
-            kategori: String(row[4]),
-            instansi: String(row[5]),
-            noHp: String(row[6]),
-            role: String(row[7]),
-            token: token
-          }
+          user: userObj
         };
       }
     }
 
+    recordLoginLog_(
+      matchedUserMeta || { id: '', username: targetUser, nama: '-', role: '-' },
+      'Gagal',
+      matchedUserMeta ? 'Password salah' : 'Username tidak terdaftar'
+    );
     return { status: 'error', message: 'Username atau Password salah.' };
   } catch (err) {
     return { status: 'error', message: 'Error DB: ' + err.toString() };
@@ -1358,6 +1470,9 @@ function saveFonnteConfig(newCfg) {
       ['WA_ACTIVE', newCfg.isActive ? 'TRUE' : 'FALSE']
     ];
     sheet.getRange(1, 1, 4, 2).setValues(configRows);
+    try {
+      CacheService.getScriptCache().remove('CFG_FONNTE');
+    } catch (eCache) {}
     invalidateAppCache();
     return { status: 'success' };
   } catch (e) {
@@ -1371,17 +1486,26 @@ function testSendFonnteWA(token, targetWa, authToken) {
     return { status: 'error', authError: !auth.forbidden, message: auth.message };
   }
   const pesan = '✅ *TES KONEKSI FONNTE BERHASIL*\n\nSistem Notifikasi WhatsApp *SIM-GEDUNG UNSRI* telah terhubung dengan baik.';
-  return sendFonnteMessage(targetWa, pesan, token);
+  return sendFonnteMessage(targetWa, pesan, token, { tipe: 'Tes Koneksi WA', pengirim: auth.user.username });
 }
 
-function sendFonnteMessage(targetPhone, messageText, overrideToken) {
+function sendFonnteMessage(targetPhone, messageText, overrideToken, logMeta) {
+  const meta = (logMeta && typeof logMeta === 'object') ? logMeta : {};
+  const tipeNotif = meta.tipe || 'Notifikasi Umum';
+  const pengirim = meta.pengirim || 'Sistem';
+  const cleanPhone = String(targetPhone || '').replace(/\D/g, '');
   try {
     const cfg = getFonnteConfig();
     const token = overrideToken ? overrideToken.trim() : cfg.token;
-    if (!token) return { status: 'error', message: 'Token Fonnte belum diatur.' };
-    if (!overrideToken && !cfg.isActive) return { status: 'skipped', message: 'Notifikasi WA dinonaktifkan di pengaturan.' };
+    if (!token) {
+      recordWaLog_(cleanPhone || String(targetPhone || ''), tipeNotif, messageText, 'Gagal', 'Token Fonnte belum diatur.', pengirim);
+      return { status: 'error', message: 'Token Fonnte belum diatur.' };
+    }
+    if (!overrideToken && !cfg.isActive) {
+      recordWaLog_(cleanPhone || String(targetPhone || ''), tipeNotif, messageText, 'Dilewati', 'Notifikasi WA dinonaktifkan di pengaturan.', pengirim);
+      return { status: 'skipped', message: 'Notifikasi WA dinonaktifkan di pengaturan.' };
+    }
 
-    const cleanPhone = String(targetPhone).replace(/\D/g, '');
     const response = UrlFetchApp.fetch('https://api.fonnte.com/send', {
       method: 'post',
       headers: { 'Authorization': token },
@@ -1393,9 +1517,23 @@ function sendFonnteMessage(targetPhone, messageText, overrideToken) {
       muteHttpExceptions: true
     });
 
-    const result = JSON.parse(response.getContentText());
-    return result.status ? { status: 'success' } : { status: 'error', message: result.reason || 'Gagal mengirim pesan via Fonnte.' };
+    const rawResp = response.getContentText();
+    let result = {};
+    try {
+      result = JSON.parse(rawResp);
+    } catch (eParse) {
+      result = { status: false, reason: rawResp };
+    }
+    if (result.status) {
+      recordWaLog_(cleanPhone, tipeNotif, messageText, 'Terkirim', result.detail || 'OK', pengirim);
+      return { status: 'success' };
+    } else {
+      const errMsg = result.reason || 'Gagal mengirim pesan via Fonnte.';
+      recordWaLog_(cleanPhone, tipeNotif, messageText, 'Gagal', errMsg, pengirim);
+      return { status: 'error', message: errMsg };
+    }
   } catch (err) {
+    recordWaLog_(cleanPhone || String(targetPhone || ''), tipeNotif, messageText, 'Gagal', err.toString(), pengirim);
     return { status: 'error', message: err.toString() };
   }
 }
@@ -1415,7 +1553,7 @@ function sendRegistrationOtpWA(noHp, nama) {
     cache.put('OTP_CD_' + cleanPhone, '1', 30);
 
     const pesanOtp = `🔐 *KODE OTP REGISTRASI SIM-GEDUNG UNSRI*\n\nHalo *${String(nama || 'Pemohon').trim()}*,\nGunakan kode OTP: *${otpCode}* (Berlaku 10 menit).`;
-    return sendFonnteMessage(cleanPhone, pesanOtp);
+    return sendFonnteMessage(cleanPhone, pesanOtp, null, { tipe: 'OTP Registrasi', pengirim: 'Sistem' });
   } catch (err) {
     return { status: 'error', message: err.toString() };
   }
@@ -1605,7 +1743,7 @@ function createBookingWithFile(payload) {
         `• *No. WA:* ${payload.noHp}\n` +
         `• *Surat:* ${urlSurat || 'Tidak ada'}\n\n` +
         `Silakan verifikasi melalui Panel Admin SIM-GEDUNG UNSRI.`;
-      sendFonnteMessage(cfg.adminWa, pesan);
+      sendFonnteMessage(cfg.adminWa, pesan, null, { tipe: 'Pengajuan Baru (Admin)', pengirim: auth.user.username });
     }
 
     return { status: 'success', bookingId: bookingId };
@@ -1623,6 +1761,9 @@ function createManualBookingAdmin(payload) {
     if (!auth.authorized) {
       return { status: 'error', authError: !auth.forbidden, message: auth.message };
     }
+
+    lock.waitLock(15000);
+    const ss = getDbSpreadsheet();
 
     // Restriksi Admin Bus: Hanya boleh memesan armada Bus Kampus
     if (auth.user.role === 'Admin Bus') {
@@ -1642,8 +1783,6 @@ function createManualBookingAdmin(payload) {
       }
     }
 
-    lock.waitLock(15000);
-    const ss = getDbSpreadsheet();
     const reqStart = normalizeDateToIso(payload.tglMulai);
     const reqEnd = normalizeDateToIso(payload.tglSelesai);
     if (!reqStart || !reqEnd || reqEnd < reqStart) {
@@ -1695,19 +1834,34 @@ function createManualBookingAdmin(payload) {
     invalidateAppCache();
     lock.releaseLock();
 
-    // Notifikasi WhatsApp dikirimkan di luar lock
+    // Notifikasi WhatsApp dikirimkan di luar lock (ke Penyewa & ke Admin)
+    const cfg = getFonnteConfig();
     if (payload.noHp) {
       const pesan = `🏛️ *KONFIRMASI JADWAL GEDUNG UNSRI*\n\n` +
         `Halo *${payload.namaPeminjam}* (${payload.instansi}),\n` +
         `Jadwal peminjaman gedung Anda telah dicatat oleh Admin SIM-GEDUNG UNSRI:\n\n` +
         `• *ID:* ${bookingId}\n` +
-        `• *Gedung:* ${payload.namaGedung}\n` +
+        `• *Gedung/Fasilitas:* ${payload.namaGedung}\n` +
         `• *Acara:* ${payload.namaAcara}\n` +
         `• *Tanggal:* ${formatDateSheet(reqStart)} s/d ${formatDateSheet(reqEnd)}\n` +
         `• *Status:* *${payload.status.toUpperCase()}*\n\n` +
         (urlBalasan ? `📄 *Surat Izin Resmi:* ${urlBalasan}\n\n` : '') +
-        `Silakan ambil fisik surat atau konfirmasi ke Bagian Umum & Perlengkapan.`;
-      sendFonnteMessage(payload.noHp, pesan);
+        `Silakan menunggu konfirmasi hasil Verifikasi Admin Gedung/Fasilitas Kampus`;
+      sendFonnteMessage(payload.noHp, pesan, null, { tipe: 'Booking Manual (Penyewa)', pengirim: auth.user.username });
+    }
+    if (cfg.isActive && cfg.adminWa) {
+      const pesanAdmin = `📝 *INPUT BOOKING MANUAL BARU*\n\n` +
+        `• *ID:* ${bookingId}\n` +
+        `• *Gedung/Fasilitas:* ${payload.namaGedung} (${payload.lokasi || '-'})\n` +
+        `• *Pemohon:* ${payload.namaPeminjam} (${payload.instansi || '-'})\n` +
+        `• *Acara:* ${payload.namaAcara}\n` +
+        `• *Tanggal:* ${formatDateSheet(reqStart)} s/d ${formatDateSheet(reqEnd)}\n` +
+        `• *No. WA Penyewa:* ${payload.noHp || '-'}\n` +
+        `• *Status:* *${String(payload.status || '').toUpperCase()}*\n` +
+        `• *Diinput oleh:* ${auth.user.nama} (${auth.user.role})\n` +
+        (urlBalasan ? `• 📄 *Surat Resmi:* ${urlBalasan}\n` : '') +
+        `\nData telah tersimpan di SIM-GEDUNG UNSRI.`;
+      sendFonnteMessage(cfg.adminWa, pesanAdmin, null, { tipe: 'Booking Manual (Admin)', pengirim: auth.user.username });
     }
 
     return { status: 'success', bookingId: bookingId };
@@ -1818,7 +1972,7 @@ function replyBookingWithFile(payload) {
             `• *Catatan:* ${payload.catatan || '-'}\n` +
             (finalUrlBalasan ? `• 📄 *Surat Resmi:* ${finalUrlBalasan}\n\n` : '\n') +
             `*Catatan:* Untuk verifikasi fisik / administrasi lebih lanjut, silakan datang langsung ke Kantor Biro Umum & Perlengkapan UNSRI.`;
-          sendFonnteMessage(noHpPeminjam, pesan);
+          sendFonnteMessage(noHpPeminjam, pesan, null, { tipe: 'Balasan Admin (' + payload.status + ')', pengirim: auth.user.username });
         }
 
         return { status: 'success', urlSuratBalasan: finalUrlBalasan };
@@ -1882,7 +2036,7 @@ function sendDailyReminders() {
           `• *Gedung:* ${namaGedung}\n` +
           `• *Tanggal Mulai:* ${tglMulai}\n\n` +
           `Harap mempersiapkan surat izin masuk kampus, kelistrikan, sound system, serta konfirmasi teknis ke pengelola fasilitas.`;
-        sendFonnteMessage(noHp, pesanH3);
+        sendFonnteMessage(noHp, pesanH3, null, { tipe: 'Pengingat H-3', pengirim: 'Sistem (Trigger)' });
         sheet.getRange(i + 1, 21).setValue('YES');
       }
 
@@ -1896,7 +2050,7 @@ function sendDailyReminders() {
           `• *Gedung:* ${namaGedung}\n` +
           `• *Mulai:* Besok (${tglMulai})\n\n` +
           `Harap berkoordinasi dengan petugas teknis gedung terkait serah terima kunci dan kelengkapan fasilitas.`;
-        sendFonnteMessage(noHp, pesanH1);
+        sendFonnteMessage(noHp, pesanH1, null, { tipe: 'Pengingat H-1', pengirim: 'Sistem (Trigger)' });
         sheet.getRange(i + 1, 20).setValue('YES');
       }
     }
@@ -2134,11 +2288,13 @@ function resetPasswordUserBySuperAdmin(payload, authToken) {
     const rows = sheet.getDataRange().getValues();
     let targetRow = -1;
     let targetUsername = '';
+    let oldToken = '';
 
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(payload.userId) || String(rows[i][1]).toLowerCase() === String(payload.userId).toLowerCase()) {
         targetRow = i + 1;
         targetUsername = String(rows[i][1]);
+        oldToken = String(rows[i][8] || '').trim();
         break;
       }
     }
@@ -2147,6 +2303,7 @@ function resetPasswordUserBySuperAdmin(payload, authToken) {
       return { status: 'error', message: 'Pengguna tidak ditemukan.' };
     }
 
+    if (oldToken) invalidateUserSessionCache(oldToken);
     const newHash = hashPassword(payload.newPassword);
     const newToken = Utilities.getUuid();
     sheet.getRange(targetRow, 3).setValue(newHash);
@@ -2181,11 +2338,13 @@ function deleteUserBySuperAdmin(userId, authToken) {
     const rows = sheet.getDataRange().getValues();
     let targetRow = -1;
     let targetUsername = '';
+    let oldToken = '';
 
     for (let i = 1; i < rows.length; i++) {
       if (String(rows[i][0]) === String(userId)) {
         targetRow = i + 1;
         targetUsername = String(rows[i][1]);
+        oldToken = String(rows[i][8] || '').trim();
         break;
       }
     }
@@ -2198,6 +2357,7 @@ function deleteUserBySuperAdmin(userId, authToken) {
       return { status: 'error', message: 'Akun Super Admin utama tidak boleh dihapus.' };
     }
 
+    if (oldToken) invalidateUserSessionCache(oldToken);
     sheet.deleteRow(targetRow);
     invalidateAppCache();
     return { status: 'success', message: 'Pengguna "' + targetUsername + '" berhasil dihapus.' };
@@ -2205,6 +2365,88 @@ function deleteUserBySuperAdmin(userId, authToken) {
     return { status: 'error', message: err.toString() };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * ============================================================================
+ * MODUL LOG AKTIVITAS: LOG LOGIN USER (SUPER ADMIN) & HISTORY WA (ADMIN/SUPER ADMIN)
+ * ============================================================================
+ */
+
+function getLoginLogs(authToken) {
+  try {
+    const auth = authenticateRequest(authToken, ['Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Log_Login');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { status: 'success', logs: [] };
+    }
+    const rows = sheet.getDataRange().getValues();
+    const list = [];
+    const maxRows = 300;
+    for (let i = rows.length - 1; i >= 1 && list.length < maxRows; i--) {
+      const r = rows[i];
+      if (r[0] || r[3]) {
+        const waktuVal = r[1] instanceof Date
+          ? Utilities.formatDate(r[1], 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss')
+          : String(r[1] || '');
+        list.push({
+          id: String(r[0] || ''),
+          waktu: waktuVal,
+          userId: String(r[2] || ''),
+          username: String(r[3] || ''),
+          nama: String(r[4] || ''),
+          role: String(r[5] || ''),
+          status: String(r[6] || ''),
+          keterangan: String(r[7] || '')
+        });
+      }
+    }
+    return { status: 'success', logs: list };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
+  }
+}
+
+function getWaLogs(authToken) {
+  try {
+    const auth = authenticateRequest(authToken, ['Admin', 'Super Admin']);
+    if (!auth.authorized) {
+      return { status: 'error', authError: !auth.forbidden, message: auth.message };
+    }
+    const ss = getDbSpreadsheet();
+    const sheet = ss.getSheetByName('Log_WA');
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { status: 'success', logs: [] };
+    }
+    const rows = sheet.getDataRange().getValues();
+    const list = [];
+    const maxRows = 300;
+    for (let i = rows.length - 1; i >= 1 && list.length < maxRows; i--) {
+      const r = rows[i];
+      if (r[0] || r[2]) {
+        const waktuVal = r[1] instanceof Date
+          ? Utilities.formatDate(r[1], 'Asia/Jakarta', 'dd-MM-yyyy HH:mm:ss')
+          : String(r[1] || '');
+        list.push({
+          id: String(r[0] || ''),
+          waktu: waktuVal,
+          tujuan: String(r[2] || ''),
+          tipe: String(r[3] || ''),
+          pesan: String(r[4] || ''),
+          status: String(r[5] || ''),
+          respon: String(r[6] || ''),
+          pengirim: String(r[7] || '')
+        });
+      }
+    }
+    return { status: 'success', logs: list };
+  } catch (err) {
+    return { status: 'error', message: err.toString() };
   }
 }
 

@@ -1030,9 +1030,11 @@
                 <label class="block text-xs font-bold text-slate-700 mb-1">Rentang Tanggal (Dari s/d Sampai)</label>
                 <div class="grid grid-cols-2 gap-1.5">
                   <input type="date" id="tbl-filter-start-date" onchange="applyBookingFilters()"
-                    class="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:border-[#1E40AF]" title="Dari Tanggal">
+                    class="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:border-[#1E40AF]"
+                    title="Dari Tanggal">
                   <input type="date" id="tbl-filter-end-date" onchange="applyBookingFilters()"
-                    class="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:border-[#1E40AF]" title="Sampai Tanggal">
+                    class="w-full px-2 py-1.5 rounded-xl border border-slate-300 text-xs bg-white focus:outline-none focus:border-[#1E40AF]"
+                    title="Sampai Tanggal">
                 </div>
               </div>
               <!-- Jika Mode Semua Waktu -->
@@ -1092,14 +1094,14 @@
               <thead
                 class="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
                 <tr>
-                  <th class="px-3 py-3 w-40 max-w-[161px]">ID & Pengajuan</th>
-                  <th class="px-4 py-3 text-center">Gedung & Lokasi</th>
-                  <th class="px-4 py-3 text-center">Acara & Kategori</th>
-                  <th class="px-4 py-3 text-center">Peminjam & Instansi</th>
-                  <th class="px-4 py-3 text-center">Jadwal Pemakaian</th>
-                  <th class="px-4 py-3 text-center">Biaya / PNBP</th>
-                  <th class="px-4 py-3 text-center">Status</th>
-                  <th class="px-4 py-3 text-center">Surat</th>
+                  <th class="px-3 py-3 w-[160px] min-w-[160px] max-w-[160px]">ID & Pengajuan</th>
+                  <th class="px-4 py-3">Gedung & Lokasi</th>
+                  <th class="px-4 py-3">Acara & Kategori</th>
+                  <th class="px-4 py-3">Peminjam & Instansi</th>
+                  <th class="px-4 py-3">Jadwal Pemakaian</th>
+                  <th class="px-4 py-3">Biaya / PNBP</th>
+                  <th class="px-4 py-3">Status</th>
+                  <th class="px-4 py-3">Surat</th>
                   <th class="px-4 py-3 text-center">Aksi</th>
                 </tr>
               </thead>
@@ -1378,7 +1380,8 @@
               </div>
               <div>
                 <h3 class="font-bold text-base text-[#081226]">Riwayat Pengiriman WhatsApp</h3>
-                <p class="text-xs text-slate-500">Log seluruh notifikasi WhatsApp otomatis & manual yang dikirim sistem (maks. 300 terbaru).</p>
+                <p class="text-xs text-slate-500">Log seluruh notifikasi WhatsApp otomatis & manual yang dikirim sistem
+                  (maks. 300 terbaru).</p>
               </div>
             </div>
             <button type="button" onclick="loadAdminWaLogs()"
@@ -1435,7 +1438,8 @@
               </div>
               <div>
                 <h3 class="font-bold text-base text-[#081226]">Log Aktivitas Login Pengguna</h3>
-                <p class="text-xs text-slate-500">Audit riwayat login berhasil maupun gagal seluruh akun sistem (maks. 300 terbaru).</p>
+                <p class="text-xs text-slate-500">Audit riwayat login berhasil maupun gagal seluruh akun sistem (maks.
+                  300 terbaru).</p>
               </div>
             </div>
             <button type="button" onclick="loadAdminLoginLogs()"
@@ -1484,6 +1488,26 @@
   <!-- TOOLTIP HOVER KALENDER -->
   <div id="calendar-hover-tooltip"
     class="hidden fixed z-50 pointer-events-none bg-[#081226]/95 text-white p-3.5 rounded-xl shadow-2xl border border-slate-700 max-w-xs text-xs backdrop-blur-md">
+  </div>
+  <!-- MODAL PILIH PERMOHONAN MENUNGGU DARI KALENDER -->
+  <div id="modal-calendar-pending"
+    class="fixed inset-0 z-50 hidden bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden my-auto fade-in">
+      <div class="bg-[#081226] text-white px-5 py-3.5 flex items-center justify-between">
+        <div>
+          <h3 class="font-bold text-sm flex items-center gap-2">
+            <i data-lucide="clock" class="w-4 h-4 text-amber-400"></i>
+            Permohonan Menunggu Verifikasi
+          </h3>
+          <p id="cal-pending-modal-date" class="text-[11px] text-amber-300 mt-0.5"></p>
+        </div>
+        <button type="button" onclick="closeModal('modal-calendar-pending')"
+          class="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div id="cal-pending-modal-list" class="p-4 space-y-2.5 max-h-[70vh] overflow-y-auto"></div>
+    </div>
   </div>
   <!-- BOTTOM NAV (MOBILE) -->
   <nav id="mobile-bottom-nav"
@@ -1847,7 +1871,8 @@
               Tambahkan
             </button>
           </div>
-          <p class="text-[11px] text-blue-700">Ketik nama kategori baru lalu klik <strong>Tambahkan</strong> (atau langsung klik Simpan).</p>
+          <p class="text-[11px] text-blue-700">Ketik nama kategori baru lalu klik <strong>Tambahkan</strong> (atau
+            langsung klik Simpan).</p>
         </div>
         <div class="grid grid-cols-3 gap-3">
           <div>
@@ -2388,7 +2413,7 @@
 
     function debounce(fn, waitMs = 200) {
       let timer;
-      return function(...args) {
+      return function (...args) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), waitMs);
       };
@@ -2603,7 +2628,7 @@
             renderJadwalList();
           }
         }
-      } catch (eCacheInit) {}
+      } catch (eCacheInit) { }
 
       // Deteksi URL parameter untuk verifikasi QR Code (?verify=BKG-...&sig=...)
       try {
@@ -2647,7 +2672,7 @@
                 gedung: gedungList,
                 booking: bookingList
               }));
-            } catch (eSave) {}
+            } catch (eSave) { }
             if (res.fonnteConfig) fonnteConfig = res.fonnteConfig;
             populateAllGedungSelects();
             renderGedungList();
@@ -3707,7 +3732,7 @@
 
           return `
             <tr class="hover:bg-blue-50/40 transition-colors border-b border-slate-100">
-              <td class="px-3 py-3 align-top w-36 max-w-[145px]">
+              <td class="px-3 py-3 align-top w-[160px] min-w-[160px] max-w-[160px]">
                 <span class="inline-block font-mono text-[11px] leading-tight font-extrabold text-[#1E40AF] bg-blue-50 px-1.5 py-1 rounded border border-blue-200" title="${bIdEsc}">${formatBookingIdTwoLines(b.id)}</span>
                 <p class="text-[10px] text-slate-400 mt-1">${escapeHtml(toDisplayDate(b.tglPengajuan))}</p>
               </td>
@@ -3828,6 +3853,7 @@
       let html = '';
       for (let i = 0; i < first; i++) html += `<div class="min-h-[3.75rem] sm:min-h-[4.25rem] rounded-xl bg-slate-50/50"></div>`;
       const todayIso = toIsoDate(new Date());
+      const isPetugasInput = currentUser && (currentUser.role === 'Admin Input' || currentUser.role === 'Petugas Input' || currentUser.role === 'Operator');
       for (let d = 1; d <= total; d++) {
         const dStr = `${adminCalYear}-${String(adminCalMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
         const isPast = dStr < todayIso;
@@ -3862,7 +3888,11 @@
             badgeList.push(`<span class="px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-emerald-600 text-white leading-tight shadow-xs whitespace-nowrap">${approvedCount} Disetujui</span>`);
           }
           if (pendingCount > 0) {
-            badgeList.push(`<span class="px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-amber-500 text-white leading-tight shadow-xs whitespace-nowrap">${pendingCount} Menunggu</span>`);
+            if (isPetugasInput) {
+              badgeList.push(`<span class="px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-amber-500 text-white leading-tight shadow-xs whitespace-nowrap" title="Menunggu verifikasi oleh Administrator">${pendingCount} Menunggu</span>`);
+            } else {
+              badgeList.push(`<button type="button" onclick="handleCalendarPendingClick(event, '${dStr}')" class="px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-amber-500 hover:bg-amber-600 active:scale-95 text-white leading-tight shadow-xs whitespace-nowrap cursor-pointer transition ring-1 ring-amber-600/30" title="Klik untuk setujui / tolak permohonan menunggu">${pendingCount} Menunggu</button>`);
+            }
           }
           if (otherCount > 0) {
             badgeList.push(`<span class="px-1.5 py-0.5 rounded text-[8px] sm:text-[9px] font-bold bg-slate-600 text-white leading-tight shadow-xs whitespace-nowrap">${otherCount} Acara</span>`);
@@ -3961,6 +3991,54 @@
     }
     function hideCalendarTooltip() {
       document.getElementById('calendar-hover-tooltip')?.classList.add('hidden');
+    }
+    function handleCalendarPendingClick(e, dStr) {
+      if (e) e.stopPropagation();
+      hideCalendarTooltip();
+      const isPetugasInput = currentUser && (currentUser.role === 'Admin Input' || currentUser.role === 'Petugas Input' || currentUser.role === 'Operator');
+      if (isPetugasInput) {
+        showToast('Akun Admin Input tidak memiliki wewenang untuk menyetujui atau menolak permohonan.', 'warning');
+        return;
+      }
+      const filterG = document.getElementById('admin-cal-gedung')?.value || 'Semua';
+      const pendingEvs = bookingList.filter(b => {
+        if (b.status !== 'Menunggu Verifikasi') return false;
+        if (filterG !== 'Semua' && b.gedungId !== filterG) return false;
+        const bStart = toIsoDate(b.tglMulai);
+        const bEnd = toIsoDate(b.tglSelesai);
+        return dStr >= bStart && dStr <= bEnd;
+      });
+      if (!pendingEvs.length) return;
+      if (pendingEvs.length === 1) {
+        openBalasModal(pendingEvs[0].id);
+        return;
+      }
+      const modal = document.getElementById('modal-calendar-pending');
+      const dateEl = document.getElementById('cal-pending-modal-date');
+      const listEl = document.getElementById('cal-pending-modal-list');
+      if (!modal || !listEl) return;
+      if (dateEl) dateEl.textContent = `Tanggal ${toDisplayDate(dStr)} (${pendingEvs.length} permohonan menunggu)`;
+      listEl.innerHTML = pendingEvs.map(b => {
+        const bIdEsc = escapeHtml(b.id);
+        return `
+          <div class="p-3 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-50 transition flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <span class="font-mono text-[10px] font-bold text-[#1E40AF] bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200">${bIdEsc}</span>
+              <p class="text-xs font-bold text-slate-800 mt-1">${escapeHtml(b.namaGedung)}</p>
+              <p class="text-[11px] text-slate-600 line-clamp-2">${escapeHtml(b.namaAcara)}</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">${escapeHtml(b.namaPeminjam)} • ${escapeHtml(b.instansi || '-')}</p>
+              <p class="text-[10px] text-slate-500">${escapeHtml(toDisplayDate(b.tglMulai))} s/d ${escapeHtml(toDisplayDate(b.tglSelesai))}</p>
+            </div>
+            <button type="button" onclick="closeModal('modal-calendar-pending'); openBalasModal('${bIdEsc}')"
+              class="shrink-0 px-3 py-1.5 rounded-lg btn-banner text-xs font-bold shadow-sm hover:brightness-110 transition cursor-pointer">
+              Putuskan
+            </button>
+          </div>
+        `;
+      }).join('');
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+      refreshIcons(modal);
     }
     function toggleAutoGenerateOpt() {
       const status = document.getElementById('balas-status').value;
